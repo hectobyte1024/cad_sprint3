@@ -1,0 +1,231 @@
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat General</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        :root {
+            --primary: #4361ee;
+            --light: #f8f9fa;
+            --dark: #212529;
+            --gray: #6c757d;
+            --border-radius: 8px;
+            --box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f5f7fa;
+            margin: 0;
+            padding: 0;
+        }
+
+        .chat-container {
+            display: flex;
+            height: 100vh;
+        }
+
+        .sidebar {
+            width: 250px;
+            background: white;
+            border-right: 1px solid #eee;
+            padding: 1rem;
+            overflow-y: auto;
+        }
+
+        .chat-area {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .messages {
+            flex: 1;
+            padding: 1rem;
+            overflow-y: auto;
+            background-color: #f9f9f9;
+        }
+
+        .message {
+            margin-bottom: 1rem;
+            padding: 0.75rem;
+            background: white;
+            border-radius: var(--border-radius);
+            box-shadow: var(--box-shadow);
+            max-width: 80%;
+        }
+
+        .message.self {
+            margin-left: auto;
+            background-color: #e3f2fd;
+        }
+
+        .message-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 0.5rem;
+            font-size: 0.9rem;
+        }
+
+        .username {
+            font-weight: bold;
+            color: var(--primary);
+        }
+
+        .role {
+            color: var(--gray);
+            font-style: italic;
+            margin-left: 0.5rem;
+        }
+
+        .time {
+            color: var(--gray);
+            font-size: 0.8rem;
+        }
+
+        .message-input {
+            padding: 1rem;
+            border-top: 1px solid #eee;
+            background: white;
+        }
+
+        .message-input form {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .message-input input {
+            flex: 1;
+            padding: 0.75rem;
+            border: 1px solid #ddd;
+            border-radius: var(--border-radius);
+        }
+
+        .message-input button {
+            padding: 0 1.5rem;
+            background: var(--primary);
+            color: white;
+            border: none;
+            border-radius: var(--border-radius);
+            cursor: pointer;
+        }
+
+        .chat-room {
+            padding: 0.75rem;
+            margin-bottom: 0.5rem;
+            border-radius: var(--border-radius);
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        .chat-room.active {
+            background: var(--primary);
+            color: white;
+        }
+
+        .chat-room:hover {
+            background: #f0f0f0;
+        }
+
+        .chat-room.active:hover {
+            background: var(--primary-dark);
+        }
+    </style>
+</head>
+<body>
+    <div class="chat-container">
+        <div class="sidebar">
+            <h3>Salas de Chat</h3>
+            <div class="chat-room active">
+                <i class="fas fa-users"></i> Chat General
+            </div>
+            <div class="chat-room">
+                <i class="fas fa-user-shield"></i> Administradores
+            </div>
+            <div class="chat-room">
+                <i class="fas fa-ambulance"></i> Respondedores
+            </div>
+            <div class="chat-room">
+                <i class="fas fa-headset"></i> Despachadores
+            </div>
+            <div class="chat-room">
+                <i class="fas fa-user"></i> Público
+            </div>
+            
+            <h3 style="margin-top: 2rem;">Mensajes Directos</h3>
+            <div class="chat-room">
+                <i class="fas fa-user"></i> Elisa
+            </div>
+            <div class="chat-room">
+                <i class="fas fa-user"></i> Juan
+            </div>
+        </div>
+        
+        <div class="chat-area">
+            <div class="messages" id="messages">
+                <?php foreach ($messages as $msg): ?>
+                    <div class="message <?= $msg['user_id'] == $user_id ? 'self' : '' ?>">
+                        <div class="message-header">
+                            <div>
+                                <span class="username"><?= htmlspecialchars($msg['nummer']) ?></span>
+                                <span class="role">(<?= htmlspecialchars($msg['numer_roll']) ?>)</span>
+                            </div>
+                            <span class="time"><?= date('H:i', strtotime($msg['from_register'])) ?></span>
+                        </div>
+                        <div class="message-content"><?= htmlspecialchars($msg['message']) ?></div>
+                    </div>
+                <?php endforeach; ?>
+            </div>
+            
+            <div class="message-input">
+                <form method="POST" id="message-form">
+                    <input type="text" name="message" placeholder="Escribe tu mensaje..." required>
+                    <button type="submit"><i class="fas fa-paper-plane"></i></button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Auto-scroll to bottom
+        const messagesDiv = document.getElementById('messages');
+        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        
+        // AJAX form submission
+        document.getElementById('message-form').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData(this);
+            
+            fetch(window.location.href, {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => {
+                if (response.ok) {
+                    window.location.reload();
+                }
+            })
+            .catch(error => console.error('Error:', error));
+        });
+        
+        // Simple real-time polling (every 3 seconds)
+        setInterval(() => {
+            fetch(window.location.href)
+                .then(response => response.text())
+                .then(html => {
+                    const parser = new DOMParser();
+                    const doc = parser.parseFromString(html, 'text/html');
+                    const newMessages = doc.getElementById('messages').innerHTML;
+                    if (newMessages !== document.getElementById('messages').innerHTML) {
+                        document.getElementById('messages').innerHTML = newMessages;
+                        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+                    }
+                });
+        }, 3000);
+    </script>
+</body>
+</html>

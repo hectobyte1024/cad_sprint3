@@ -1,0 +1,247 @@
+
+        :root {
+            --primary: #4361ee;
+            --primary-dark: #3a56d4;
+            --secondary: #3f37c9;
+            --success: #4cc9f0;
+            --danger: #f72585;
+            --warning: #f8961e;
+            --light: #f8f9fa;
+            --dark: #212529;
+            --gray: #6c757d;
+            --border-radius: 8px;
+            --box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            --transition: all 0.3s ease;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            background-color: #f5f7fa;
+        }
+
+        .navbar {
+            background: var(--primary);
+            padding: 1rem 2rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            box-shadow: var(--box-shadow);
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+        }
+
+        .main-container {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        .form-container {
+            width: 40%;
+            padding: 2rem;
+            overflow-y: auto;
+            background: white;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+
+        .map-container {
+            width: 60%;
+            height: 100%;
+            position: relative;
+        }
+
+        #map {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            border-left: 1px solid #ddd;
+        }
+
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+            color: var(--dark);
+        }
+
+        input[type="text"],
+        input[type="tel"],
+        input[type="number"],
+        textarea,
+        select {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid #ddd;
+            border-radius: var(--border-radius);
+            font-size: 1rem;
+            transition: var(--transition);
+            background-color: white;
+        }
+
+        textarea {
+            min-height: 120px;
+            resize: vertical;
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: var(--border-radius);
+            font-size: 1rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: var(--transition);
+            gap: 0.5rem;
+        }
+
+        .btn-primary {
+            background-color: var(--primary);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background-color: var(--primary-dark);
+        }
+
+        .btn-warning {
+            background-color: var(--warning);
+            color: white;
+        }
+
+        .location-details {
+            background: #f8f9fa;
+            padding: 1rem;
+            border-radius: var(--border-radius);
+            margin-top: 1rem;
+            border: 1px solid #eee;
+        }
+
+        .location-details p {
+            margin: 0.5rem 0;
+            font-size: 0.9rem;
+        }
+
+        .location-details strong {
+            color: var(--primary);
+        }
+
+        /* Autocomplete styles */
+        .autocomplete-container {
+            position: relative;
+        }
+
+        .autocomplete-results {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            max-height: 200px;
+            overflow-y: auto;
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: var(--border-radius);
+            z-index: 1000;
+            display: none;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+
+        .autocomplete-item {
+            padding: 0.75rem 1rem;
+            cursor: pointer;
+            border-bottom: 1px solid #eee;
+            transition: var(--transition);
+        }
+
+        .autocomplete-item:last-child {
+            border-bottom: none;
+        }
+
+        .autocomplete-item:hover {
+            background-color: #f0f7ff;
+        }
+
+        .emergency-type {
+            font-weight: bold;
+            color: var(--dark);
+            margin-bottom: 0.25rem;
+        }
+
+        .emergency-desc {
+            font-size: 0.85rem;
+            color: var(--gray);
+            line-height: 1.4;
+        }
+
+        .emergency-priority {
+            float: right;
+            padding: 0.2rem 0.5rem;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+
+        .priority-high {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+
+        .priority-medium {
+            background-color: #fff3cd;
+            color: #856404;
+        }
+
+        .priority-low {
+            background-color: #d4edda;
+            color: #155724;
+        }
+
+        .readonly-field {
+            background-color: #f8f9fa;
+            cursor: not-allowed;
+            border-color: #e9ecef;
+        }
+
+        .readonly-field:focus {
+            outline: none;
+            box-shadow: none;
+            border-color: #e9ecef;
+        }
+
+        .select2-container--disabled .select2-selection {
+            background-color: #f8f9fa;
+            cursor: not-allowed;
+        }
+
+        @media (max-width: 768px) {
+            .main-container {
+                flex-direction: column;
+            }
+            
+            .form-container, .map-container {
+                width: 100%;
+                height: 50%;
+            }
+        }
