@@ -4,18 +4,20 @@ if (empty($_SESSION['id_usuario']) || empty($_SESSION['nombre_usuario'])) {
     header("Location: ../login.php");
     exit();
 }
+
+// Generate CSRF token if not exists
+if (empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
 ?>
 <!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Dashboard - Visual Priority Queues</title>
+    <title>Dashboard - Visual Call Queues</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-    <!-- Same CSS theme you already use -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        /* REUSING your color palette */
         :root {
             --primary: #4361ee;
             --secondary: #3f37c9;
@@ -76,6 +78,14 @@ if (empty($_SESSION['id_usuario']) || empty($_SESSION['nombre_usuario'])) {
             color: var(--primary);
         }
 
+        .queue-stats {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            font-size: 0.9rem;
+            color: var(--gray);
+        }
+
         ul {
             list-style: none;
             padding: 0;
@@ -89,7 +99,24 @@ if (empty($_SESSION['id_usuario']) || empty($_SESSION['nombre_usuario'])) {
             background-color: var(--light);
             border-radius: var(--radius);
             transition: all 0.3s;
+            display: flex;
+            justify-content: space-between;
         }
+
+        .call-info {
+            flex: 1;
+        }
+
+        .call-priority {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            align-self: center;
+        }
+
+        .priority-high { background-color: var(--danger); }
+        .priority-medium { background-color: var(--warning); }
+        .priority-low { background-color: var(--success); }
 
         .log {
             background: var(--white);
@@ -124,9 +151,17 @@ if (empty($_SESSION['id_usuario']) || empty($_SESSION['nombre_usuario'])) {
         .resume-btn {
             background-color: var(--success);
         }
+
+        .fade-in {
+            animation: fadeIn 0.5s;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
     </style>
 </head>
-
 <body>
 
 <nav>
@@ -140,14 +175,26 @@ if (empty($_SESSION['id_usuario']) || empty($_SESSION['nombre_usuario'])) {
     <div class="queues">
         <div class="queue" id="queue1">
             <h2>Fila de llamadas 1</h2>
+            <div class="queue-stats" id="stats1">
+                <span>En espera: <span class="count">0</span></span>
+                <span>Atendidas: <span class="processed">0</span></span>
+            </div>
             <ul id="list1"></ul>
         </div>
         <div class="queue" id="queue2">
             <h2>Fila de llamadas 2</h2>
+            <div class="queue-stats" id="stats2">
+                <span>En espera: <span class="count">0</span></span>
+                <span>Atendidas: <span class="processed">0</span></span>
+            </div>
             <ul id="list2"></ul>
         </div>
         <div class="queue" id="queue3">
             <h2>Fila de llamadas 3</h2>
+            <div class="queue-stats" id="stats3">
+                <span>En espera: <span class="count">0</span></span>
+                <span>Atendidas: <span class="processed">0</span></span>
+            </div>
             <ul id="list3"></ul>
         </div>
     </div>
@@ -163,79 +210,145 @@ if (empty($_SESSION['id_usuario']) || empty($_SESSION['nombre_usuario'])) {
 </div>
 
 <script>
+// Configuration
+const config = {
+    callInterval: 1500, // ms between calls
+    minProcessingTime: 3, // seconds
+    maxProcessingTime: 7, // seconds
+    callPriorities: ['Alta', 'Media', 'Baja'],
+    statuses: ['Atender', 'En curso', 'Finalizada', 'Clasificada']
+};
+
+// State tracking
 let running = true;
 let inputInterval;
 let processingIntervals = [];
+const queueStats = {
+    1: { pending: 0, processed: 0 },
+    2: { pending: 0, processed: 0 },
+    3: { pending: 0, processed: 0 }
+};
 
+// DOM Elements
+const logBox = document.getElementById('log');
+const pauseBtn = document.getElementById('pauseBtn');
+const resumeBtn = document.getElementById('resumeBtn');
+
+// Helper functions
 function generateRandomPhoneNumber() {
-    // Start with 55 or 56
     const prefix = Math.random() < 0.5 ? '55' : '56';
-    // Generate remaining 8 digits
     const suffix = Math.floor(10000000 + Math.random() * 90000000);
-    return prefix + suffix;
+    return parseInt(prefix + suffix); // Matches INT type in DB
 }
 
-function generateCall(queueId) {
-    const value = Math.floor(Math.random() * 100) + 1;
-    const processingTime = Math.floor(Math.random() * 5) + 3; // 3 to 7 seconds realistic
-    const phoneNumber = generateRandomPhoneNumber();
+function generateRandomCoords() {
+    return {
+        lat: parseFloat((19.4 + Math.random() * 0.1).toFixed(6)), // Mexico City area
+        lng: parseFloat((-99.1 + Math.random() * 0.1).toFixed(6))
+    };
+}
 
+function getRandomPriority() {
+    return config.callPriorities[Math.floor(Math.random() * config.callPriorities.length)];
+}
+
+function getRandomStatus() {
+    return config.statuses[Math.floor(Math.random() * config.statuses.length)];
+}
+
+function updateQueueStats(queueId) {
+    const stats = queueStats[queueId];
+    const statElement = document.getElementById(`stats${queueId}`);
+    statElement.querySelector('.count').textContent = stats.pending;
+    statElement.querySelector('.processed').textContent = stats.processed;
+}
+
+function addLog(message, isError = false) {
+    const timestamp = new Date().toLocaleTimeString();
+    const logEntry = document.createElement('div');
+    logEntry.className = 'fade-in';
+    logEntry.innerHTML = `[${timestamp}] ${message}`;
+    if (isError) logEntry.style.color = 'var(--danger)';
+    logBox.prepend(logEntry);
+    
+    // Auto-scroll to top
+    logBox.scrollTop = 0;
+}
+
+// Call generation and processing
+function generateCall(queueId) {
+    if (!running) return;
+
+    const processingTime = Math.floor(
+        Math.random() * (config.maxProcessingTime - config.minProcessingTime + 1) + config.minProcessingTime
+    );
+    const phoneNumber = generateRandomPhoneNumber();
+    const priority = getRandomPriority();
+    const { lat, lng } = generateRandomCoords();
+    const callId = Date.now(); // Temporary ID for UI tracking
+
+    // Create call element
     const li = document.createElement('li');
-    li.textContent = `${value} (${processingTime}s) - ${phoneNumber}`;
-    li.style.backgroundColor = 'lightgreen';
-    li.style.opacity = '0';
+    li.className = 'fade-in';
+    li.dataset.callId = callId;
+    
+    li.innerHTML = `
+        <div class="call-info">
+            ${phoneNumber} (${processingTime}s)
+        </div>
+        <div class="call-priority priority-${priority.toLowerCase()}"></div>
+    `;
+
     const list = document.getElementById(`list${queueId}`);
     list.prepend(li);
+    queueStats[queueId].pending++;
+    updateQueueStats(queueId);
 
-    // Smooth fade-in
-    setTimeout(() => {
-        li.style.opacity = '1';
-    }, 50);
-
-    // Turn back to white after 1 second
-    setTimeout(() => {
-        li.style.backgroundColor = '';
-    }, 1000);
-
-    // Simulate some fake coordinates
-    const lat = (19.4 + Math.random() * 0.01).toFixed(6);
-    const lng = (-99.1 + Math.random() * 0.01).toFixed(6);
-
-    // Send to server via AJAX
+    // Send to server
+    // Replace your current fetch code with this:
+    // In your generateCall function, update the fetch call:
     fetch('insert_call.php', {
         method: 'POST',
-        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'X-CSRF-Token': '<?php echo $_SESSION['csrf_token']; ?>'
+        },
         body: new URLSearchParams({
-            quepaso: `Llamada simulada ${value}`,
-            tipo_auxilio: ["Medico", "Proteccion Civil", "Seguridad"][Math.floor(Math.random() * 3)],
-            num_personas: Math.floor(Math.random() * 5) + 1,
             telefono: phoneNumber,
-            clasificacion: ["Emergencia Real", "Broma", "TTY"][Math.floor(Math.random() * 3)],
-            prioridad: ["Alta", "Media", "Baja"][Math.floor(Math.random() * 3)],
+            duracion: processingTime,
             latitud: lat,
             longitud: lng
         })
     })
-    .then(response => response.json())
+    .then(async response => {
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Server error: ${response.status} - ${errorText}`);
+        }
+        return response.json();
+    })
     .then(data => {
         if (!data.success) {
-            console.error('Error al guardar en la base de datos:', data.error);
+            throw new Error(data.error || 'Unknown error occurred');
         }
+        li.dataset.dbId = data.id_llamada;
+        addLog(`📞 Llamada recibida: ${phoneNumber} (Fila ${queueId})`);
     })
     .catch(error => {
-        console.error('Error de red:', error);
+        addLog(`❌ Error al registrar llamada: ${error.message}`, true);
+        console.error('Error details:', error);
     });
 
-    // Schedule processing (dequeue)
+    // Schedule processing
     const processTimeout = setTimeout(() => {
         if (li.parentElement) {
-            li.style.backgroundColor = '#f8d7da'; // Light red
-            li.style.opacity = '0'; // Start fade-out
+            li.style.opacity = '0';
             setTimeout(() => {
-                if (li.parentElement) {
-                    li.remove();
-                    addLog(`📞 Llamada ${value} (${phoneNumber}) recibida por la Fila de Llamadas ${queueId}`);
-                }
+                li.remove();
+                queueStats[queueId].pending--;
+                queueStats[queueId].processed++;
+                updateQueueStats(queueId);
+                addLog(`✅ Llamada ${phoneNumber} procesada`);
             }, 500);
         }
     }, processingTime * 1000);
@@ -243,23 +356,17 @@ function generateCall(queueId) {
     processingIntervals.push(processTimeout);
 }
 
-function generateRandomCalls() {
-    if (!running) return;
-
-    // Generate one call randomly for only one operator (not all 3 at once)
-    const randomQueue = Math.floor(Math.random() * 3) + 1;
-    generateCall(randomQueue);
-}
-
-function addLog(message) {
-    const logBox = document.getElementById('log');
-    const timestamp = new Date().toLocaleTimeString();
-    logBox.innerHTML += `[${timestamp}] ${message}<br>`;
-}
-
+// Simulation control
 function startSimulation() {
     running = true;
-    inputInterval = setInterval(generateRandomCalls, 1500); // Every 1.5 seconds
+    inputInterval = setInterval(() => {
+        const randomQueue = Math.floor(Math.random() * 3) + 1;
+        generateCall(randomQueue);
+    }, config.callInterval);
+    
+    pauseBtn.disabled = false;
+    resumeBtn.disabled = true;
+    addLog("▶️ Simulación iniciada");
 }
 
 function pauseSimulation() {
@@ -267,27 +374,23 @@ function pauseSimulation() {
     clearInterval(inputInterval);
     processingIntervals.forEach(clearTimeout);
     processingIntervals = [];
-
-    document.getElementById('pauseBtn').disabled = true;
-    document.getElementById('resumeBtn').disabled = false;
-    addLog("⏸️ Simulación pausada.");
+    
+    pauseBtn.disabled = true;
+    resumeBtn.disabled = false;
+    addLog("⏸️ Simulación pausada");
 }
 
 function resumeSimulation() {
     startSimulation();
-    document.getElementById('pauseBtn').disabled = false;
-    document.getElementById('resumeBtn').disabled = true;
-    addLog("▶️ Simulación reanudada.");
+    addLog("↩️ Simulación reanudada");
 }
 
-// Button listeners
-document.getElementById('pauseBtn').addEventListener('click', pauseSimulation);
-document.getElementById('resumeBtn').addEventListener('click', resumeSimulation);
+// Event listeners
+pauseBtn.addEventListener('click', pauseSimulation);
+resumeBtn.addEventListener('click', resumeSimulation);
 
-// Start automatically
+// Initialize
 startSimulation();
 </script>
-
 </body>
 </html>
-
