@@ -50,14 +50,14 @@ if (isset($_GET['call_id'])) {
             // Create new incident from call data - AUTOFILL ALL FIELDS
             $incidente = [
                 'quepaso' => 'Llamada entrante',
-                'tipo_auxilio' => $llamada['tipo_emergencia'] ?? '',
+                'tipo_auxilio' => '',
                 'num_personas' => 1,
                 'telefono' => $llamada['telefono'] ?? '',
-                'prioridad' => 'Media',
+                'prioridad' => '',
                 'latitud' => $llamada['latitud'] ?? null,
                 'longitud' => $llamada['longitud'] ?? null,
                 'id_llamada' => $call_id,
-                'id_emergency_type' => $llamada['tipo_emergencia'] ?? null,
+                'id_emergency_type' => null,
                 'colonia' => '',
                 'localidad' => '',
                 'municipio' => ''
@@ -146,10 +146,10 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             // Create new incident
             $stmt = $pdo->prepare("INSERT INTO incidentes 
                 (quepaso, tipo_auxilio, hora_incidente, fecha_incidente, 
-                fecha_actualizacion, num_personas, latitud, longitud, 
+                num_personas, latitud, longitud, 
                 telefono, id_usuario_reporta, prioridad, 
                 colonia, localidad, municipio, id_emergency_type, id_llamada) 
-                VALUES (?, ?, CURTIME(), NOW(), NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                VALUES (?, ?, CURTIME(), NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
 
             $stmt->execute([
                 $quepaso, $tipo_auxilio, $num_personas, $latitud, $longitud,
@@ -162,9 +162,9 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             // Update call status to "Finalizada" if this was from a call
             if ($id_llamada) {
                 $pdo->prepare("UPDATE llamadas 
-                    SET estatus = 'Finalizada', id_incidente = ?
+                    SET estatus = 'Finalizada'
                     WHERE id_llamada = ?")
-                    ->execute([$folio_incidente, $id_llamada]);
+                    ->execute([$id_llamada]);
             }
         }
         
@@ -590,7 +590,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                 label: `${type.code} - ${type.name} (${type.category})`,
                 value: type.code,
                 category: type.category,
-                priority: type.priority || 'Media',
+                priority: mapPriorityToEnum(type.priority),
                 id: type.id,
                 description: type.description || ''
             })));
@@ -601,6 +601,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             $('#prioridad').val(ui.item.priority);
             $('#id_emergency_type').val(ui.item.value);
             $('#emergency_type_search').val(ui.item.label);
+            $('#paso').val(ui.item.description);
             return false;
         }
     }).data('ui-autocomplete')._renderItem = function(ul, item) {
@@ -609,6 +610,16 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                     <div class="emergency-desc">${item.description}</div>`)
             .appendTo(ul);
     };
+
+    function mapPriorityToEnum(priority) {
+        if (!priority) return 'Media';
+        const map = {
+            'ALTA': 'Alta',
+            'MEDIA': 'Media',
+            'BAJA': 'Baja'
+        };
+        return map[priority.toUpperCase()] || 'Media';
+    }
 
     // If we have emergency type info from call data
     <?php if (isset($incidente['id_emergency_type']) && !empty($incidente['id_emergency_type'])): ?>
