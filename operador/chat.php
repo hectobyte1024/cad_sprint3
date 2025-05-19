@@ -2,6 +2,10 @@
 session_start();
 require_once '../db.php';
 
+// Enable error reporting for debugging
+error_reporting(E_ALL);
+ini_set('display_errors', 1);
+
 // Check authentication
 if (empty($_SESSION['id_usuario'])) {
     header("Location: ../login.php");
@@ -15,36 +19,43 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['new_chat'])) {
     $participants = $_POST['participants'] ?? [];
     $chat_name = trim($_POST['chat_name'] ?? '');
     
-    // Validate participants (must include at least one other user)
+    // Validate participants
     if (count($participants) < 1) {
         $_SESSION['error'] = "Debes seleccionar al menos un participante";
     } else {
         try {
-            $conn->begin_transaction();
+            $pdo->beginTransaction();
             
             // Create the chat
-            $is_group = (count($participants) > 1 || !empty($chat_name));
-            $stmt = $conn->prepare("INSERT INTO chats (chat_name, is_group) VALUES (?, ?)");
-            $chat_name = $is_group ? $chat_name : '';
-            $stmt->bind_param("si", $chat_name, $is_group);
-            $stmt->execute();
-            $chat_id = $conn->insert_id;
+            $is_group = (count($participants) > 1 || !empty($chat_name)) ? 1 : 0;
+            $stmt = $pdo->prepare("INSERT INTO chats (chat_name, is_group) VALUES (:chat_name, :is_group)");
+            $stmt->execute([
+                ':chat_name' => $chat_name,
+                ':is_group' => $is_group
+            ]);
+            $chat_id = $pdo->lastInsertId();
             
             // Add current user to chat
-            $stmt = $conn->prepare("INSERT INTO chat_participants (id_chat, id_usuario) VALUES (?, ?)");
-            $stmt->bind_param("ii", $chat_id, $current_user_id);
-            $stmt->execute();
+            $stmt = $pdo->prepare("INSERT INTO chat_participants (id_chat, id_usuario) VALUES (:chat_id, :user_id)");
+            $stmt->execute([
+                ':chat_id' => $chat_id,
+                ':user_id' => $current_user_id
+            ]);
             
             // Add other participants
             foreach ($participants as $participant_id) {
-                $stmt->bind_param("ii", $chat_id, $participant_id);
-                $stmt->execute();
+                $stmt->execute([
+                    ':chat_id' => $chat_id,
+                    ':user_id' => $participant_id
+                ]);
             }
             
-            $conn->commit();
+            $pdo->commit();
             $_SESSION['success'] = "Chat creado exitosamente";
-        } catch (Exception $e) {
-            $conn->rollback();
+            header("Location: chat.php?chat_id=" . $chat_id);
+            exit();
+        } catch (PDOException $e) {
+            $pdo->rollBack();
             $_SESSION['error'] = "Error al crear el chat: " . $e->getMessage();
         }
     }
@@ -58,44 +69,65 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['send_message'])) {
     if (empty($message)) {
         $_SESSION['error'] = "El mensaje no puede estar vacío";
     } else {
-        // Verify user is a participant in this chat
-        $stmt = $conn->prepare("SELECT 1 FROM chat_participants WHERE id_chat = ? AND id_usuario = ?");
-        $stmt->bind_param("ii", $chat_id, $current_user_id);
-        $stmt->execute();
-        
-        if ($stmt->get_result()->num_rows > 0) {
-            $stmt = $conn->prepare("INSERT INTO messages (id_chat, id_usuario, mensaje) VALUES (?, ?, ?)");
-            $stmt->bind_param("iis", $chat_id, $current_user_id, $message);
-            $stmt->execute();
-        } else {
-            $_SESSION['error'] = "No tienes permiso para enviar mensajes a este chat";
+        try {
+            // Verify user is a participant in this chat
+            $stmt = $pdo->prepare("SELECT 1 FROM chat_participants WHERE id_chat = :chat_id AND id_usuario = :user_id");
+            $stmt->execute([
+                ':chat_id' => $chat_id,
+                ':user_id' => $current_user_id
+            ]);
+            
+            if ($stmt->rowCount() > 0) {
+                $stmt = $pdo->prepare("INSERT INTO messages (id_chat, id_usuario, mensaje) VALUES (:chat_id, :user_id, :message)");
+                $stmt->execute([
+                    ':chat_id' => $chat_id,
+                    ':user_id' => $current_user_id,
+                    ':message' => $message
+                ]);
+                
+                // Update last message timestamp for chat ordering
+                $stmt = $pdo->prepare("UPDATE chats SET created_at = NOW() WHERE id_chat = :chat_id");
+                $stmt->execute([':chat_id' => $chat_id]);
+                
+                // Return to the same chat to see the new message
+                header("Location: chat.php?chat_id=" . $chat_id);
+                exit();
+            } else {
+                $_SESSION['error'] = "No tienes permiso para enviar mensajes a este chat";
+            }
+        } catch (PDOException $e) {
+            $_SESSION['error'] = "Error al enviar mensaje: " . $e->getMessage();
         }
     }
 }
 
 // Get all chats the user is part of
 $chats = [];
-$stmt = $conn->prepare("SELECT c.id_chat, c.chat_name, c.is_group 
-                       FROM chats c
-                       JOIN chat_participants cp ON c.id_chat = cp.id_chat
-                       WHERE cp.id_usuario = ?
-                       ORDER BY (SELECT MAX(fecha_envio) FROM messages m WHERE m.id_chat = c.id_chat) DESC");
-$stmt->bind_param("i", $current_user_id);
-$stmt->execute();
-$result = $stmt->get_result();
-$chats = $result->fetch_all(MYSQLI_ASSOC);
+try {
+    $stmt = $pdo->prepare("SELECT c.id_chat, c.chat_name, c.is_group 
+                          FROM chats c
+                          JOIN chat_participants cp ON c.id_chat = cp.id_chat
+                          WHERE cp.id_usuario = :user_id
+                          ORDER BY c.created_at DESC");
+    $stmt->execute([':user_id' => $current_user_id]);
+    $chats = $stmt->fetchAll(PDO::FETCH_ASSOC);
+} catch (PDOException $e) {
+    $_SESSION['error'] = "Error al obtener chats: " . $e->getMessage();
+}
 
 // Get all users for new chat selection
 $users = [];
-$stmt = $conn->prepare("SELECT u.id_usuario, u.nombre, u.apellido, r.nombre_rol 
-                       FROM usuarios u
-                       JOIN roles r ON u.rol_id = r.id_rol
-                       WHERE u.id_usuario != ? AND u.activo = 1
-                       ORDER BY r.nombre_rol, u.nombre, u.apellido");
-$stmt->bind_param("i", $current_user_id);
-$stmt->execute();
-$result = $stmt->get_result();
-$users = $result->fetch_all(MYSQLI_ASSOC);
+try {
+    $stmt = $pdo->prepare("SELECT u.id_usuario, u.nombre, u.apellido, r.nombre_rol 
+                          FROM usuarios u
+                          JOIN roles r ON u.rol_id = r.id_rol
+                          WHERE u.id_usuario != :user_id AND u.activo = 1
+                          ORDER BY r.nombre_rol, u.nombre, u.apellido");
+    $stmt->execute([':user_id' => $current_user_id]);
+    $users = $stmt->fetchAll(PDO::FETCH_ASSOC);
+} catch (PDOException $e) {
+    $_SESSION['error'] = "Error al obtener usuarios: " . $e->getMessage();
+}
 
 // Get messages for selected chat
 $selected_chat_id = $_GET['chat_id'] ?? ($chats[0]['id_chat'] ?? null);
@@ -103,45 +135,49 @@ $messages = [];
 $chat_participants = [];
 
 if ($selected_chat_id) {
-    // Get messages
-    $stmt = $conn->prepare("SELECT m.*, u.nombre, u.apellido 
-                           FROM messages m
-                           JOIN usuarios u ON m.id_usuario = u.id_usuario
-                           WHERE m.id_chat = ?
-                           ORDER BY m.fecha_envio ASC");
-    $stmt->bind_param("i", $selected_chat_id);
-    $stmt->execute();
-    $result = $stmt->get_result();
-    $messages = $result->fetch_all(MYSQLI_ASSOC);
-    
-    // Get participants for the selected chat
-    $stmt = $conn->prepare("SELECT u.id_usuario, u.nombre, u.apellido, r.nombre_rol
-                           FROM chat_participants cp
-                           JOIN usuarios u ON cp.id_usuario = u.id_usuario
-                           JOIN roles r ON u.rol_id = r.id_rol
-                           WHERE cp.id_chat = ?");
-    $stmt->bind_param("i", $selected_chat_id);
-    $stmt->execute();
-    $result = $stmt->get_result();
-    $chat_participants = $result->fetch_all(MYSQLI_ASSOC);
-    
-    // Update chat name if it's empty (private chat)
-    foreach ($chats as &$chat) {
-        if ($chat['id_chat'] == $selected_chat_id && empty($chat['chat_name'])) {
-            $other_participants = array_filter($chat_participants, function($p) use ($current_user_id) {
-                return $p['id_usuario'] != $current_user_id;
-            });
-            
-            if (count($other_participants) == 1) {
-                $participant = reset($other_participants);
-                $chat['chat_name'] = $participant['nombre'] . ' ' . $participant['apellido'];
+    try {
+        // Get messages
+        $stmt = $pdo->prepare("SELECT m.*, u.nombre, u.apellido 
+                              FROM messages m
+                              JOIN usuarios u ON m.id_usuario = u.id_usuario
+                              WHERE m.id_chat = :chat_id
+                              ORDER BY m.fecha_envio ASC");
+        $stmt->execute([':chat_id' => $selected_chat_id]);
+        $messages = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        // Get participants for the selected chat
+        $stmt = $pdo->prepare("SELECT u.id_usuario, u.nombre, u.apellido, r.nombre_rol
+                              FROM chat_participants cp
+                              JOIN usuarios u ON cp.id_usuario = u.id_usuario
+                              JOIN roles r ON u.rol_id = r.id_rol
+                              WHERE cp.id_chat = :chat_id");
+        $stmt->execute([':chat_id' => $selected_chat_id]);
+        $chat_participants = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        // Update chat names for display
+        foreach ($chats as &$chat) {
+            if ($chat['id_chat'] == $selected_chat_id && empty($chat['chat_name'])) {
+                $other_participants = array_filter($chat_participants, function($p) use ($current_user_id) {
+                    return $p['id_usuario'] != $current_user_id;
+                });
+                
+                if (count($other_participants) == 1) {
+                    $participant = reset($other_participants);
+                    $chat['chat_name'] = $participant['nombre'] . ' ' . $participant['apellido'];
+                }
             }
         }
+        unset($chat);
+    } catch (PDOException $e) {
+        $_SESSION['error'] = "Error al obtener información del chat: " . $e->getMessage();
     }
-    unset($chat);
 }
-?>
 
+// Show session messages
+$mensaje = $_SESSION['mensaje'] ?? null;
+$error = $_SESSION['error'] ?? null;
+unset($_SESSION['mensaje'], $_SESSION['error']);
+?>
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -191,6 +227,13 @@ if ($selected_chat_id) {
             position: sticky;
             top: 0;
             z-index: 1000;
+            color: white;
+        }
+
+        .navbar a {
+            color: white;
+            text-decoration: none;
+            margin: 0 10px;
         }
 
         .chat-container {
@@ -470,27 +513,23 @@ if ($selected_chat_id) {
                         <?php if (!empty($chat['chat_name'])): ?>
                             <div class="participants-count">
                                 <?php
-                                $stmt = $conn->prepare("SELECT COUNT(*) as count FROM chat_participants WHERE id_chat = ?");
-                                $stmt->bind_param("i", $chat['id_chat']);
-                                $stmt->execute();
-                                $result = $stmt->get_result();
-                                $count = $result->fetch_assoc()['count'];
+                                $stmt = $pdo->prepare("SELECT COUNT(*) as count FROM chat_participants WHERE id_chat = :chat_id");
+                                $stmt->execute([':chat_id' => $chat['id_chat']]);
+                                $count = $stmt->fetch()['count'];
                                 ?>
                                 <?= $count ?> participante<?= $count != 1 ? 's' : '' ?>
                             </div>
                         <?php endif; ?>
                         <?php
                         // Get last message preview
-                        $stmt = $conn->prepare("SELECT m.mensaje, u.nombre 
+                        $stmt = $pdo->prepare("SELECT m.mensaje, u.nombre 
                                               FROM messages m
                                               JOIN usuarios u ON m.id_usuario = u.id_usuario
-                                              WHERE m.id_chat = ?
+                                              WHERE m.id_chat = :chat_id
                                               ORDER BY m.fecha_envio DESC
                                               LIMIT 1");
-                        $stmt->bind_param("i", $chat['id_chat']);
-                        $stmt->execute();
-                        $result = $stmt->get_result();
-                        $last_message = $result->fetch_assoc();
+                        $stmt->execute([':chat_id' => $chat['id_chat']]);
+                        $last_message = $stmt->fetch();
                         ?>
                         <?php if ($last_message): ?>
                             <div class="chat-preview">
@@ -520,7 +559,7 @@ if ($selected_chat_id) {
             
             <div class="messages-container" id="messagesContainer">
                 <?php foreach ($messages as $message): ?>
-                    <div class="message <?= $message['id_usuario'] == $current_user_id ? 'sent' : 'received' ?>">
+                    <div class="message <?= $message['id_usuario'] == $current_user_id ? 'sent' : 'received' ?>" data-message-id="<?= $message['id_mensaje'] ?>">
                         <?php if ($message['id_usuario'] != $current_user_id): ?>
                             <div class="message-sender">
                                 <?= htmlspecialchars($message['nombre'] . ' ' . $message['apellido']) ?>
@@ -613,46 +652,98 @@ if ($selected_chat_id) {
 </div>
 
 <script>
-    // Modal functionality
+// Modal functionality
+document.addEventListener('DOMContentLoaded', function() {
     const modal = document.getElementById('newChatModal');
     const newChatBtn = document.getElementById('newChatBtn');
     const newChatBtn2 = document.getElementById('newChatBtn2');
     const closeModal = document.getElementById('closeModal');
     
-    if (newChatBtn) {
-        newChatBtn.addEventListener('click', () => {
-            modal.style.display = 'flex';
-        });
-    }
-    
-    if (newChatBtn2) {
-        newChatBtn2.addEventListener('click', () => {
-            modal.style.display = 'flex';
-        });
-    }
-    
-    closeModal.addEventListener('click', () => {
-        modal.style.display = 'none';
+    // Show modal when either button is clicked
+    [newChatBtn, newChatBtn2].forEach(btn => {
+        if (btn) {
+            btn.addEventListener('click', () => {
+                modal.style.display = 'flex';
+            });
+        }
     });
     
+    // Close modal
+    if (closeModal) {
+        closeModal.addEventListener('click', () => {
+            modal.style.display = 'none';
+        });
+    }
+    
+    // Close modal when clicking outside
     window.addEventListener('click', (e) => {
         if (e.target == modal) {
             modal.style.display = 'none';
         }
     });
     
-    // Auto-scroll to bottom of messages
-    const messagesContainer = document.getElementById('messagesContainer');
-    if (messagesContainer) {
-        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    // Handle form submission for messages
+    const messageForm = document.querySelector('.message-input form');
+    if (messageForm) {
+        messageForm.addEventListener('submit', function(e) {
+            // Form will submit normally, no need for AJAX since we're redirecting
+        });
     }
     
-    // Auto-refresh messages every 5 seconds
-    setInterval(() => {
-        if (window.location.href.indexOf('chat_id=') > -1) {
-            window.location.reload();
-        }
-    }, 5000);
+    // Start polling for new messages
+    pollNewMessages();
+});
+
+// Real-time message updates
+function pollNewMessages() {
+    const chatId = new URLSearchParams(window.location.search).get('chat_id');
+    const lastMessageId = document.querySelector('.message:last-child')?.dataset.messageId || 0;
+    
+    if (chatId) {
+        fetch(`chat_refresh.php?chat_id=${chatId}&last_message_id=${lastMessageId}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.success && data.messages.length > 0) {
+                    const messagesContainer = document.getElementById('messagesContainer');
+                    
+                    data.messages.forEach(msg => {
+                        // Check if message already exists
+                        if (!document.querySelector(`.message[data-message-id="${msg.id_mensaje}"]`)) {
+                            const isCurrentUser = msg.id_usuario == <?= $current_user_id ?>;
+                            const messageDiv = document.createElement('div');
+                            messageDiv.className = `message ${isCurrentUser ? 'sent' : 'received'}`;
+                            messageDiv.dataset.messageId = msg.id_mensaje;
+                            
+                            messageDiv.innerHTML = `
+                                ${!isCurrentUser ? `
+                                    <div class="message-sender">
+                                        ${msg.nombre} ${msg.apellido}
+                                    </div>
+                                ` : ''}
+                                <div class="message-text">
+                                    ${msg.mensaje.replace(/\n/g, '<br>')}
+                                </div>
+                                <div class="message-time">
+                                    ${new Date(msg.fecha_envio).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                                </div>
+                            `;
+                            
+                            messagesContainer.appendChild(messageDiv);
+                        }
+                    });
+                    
+                    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                }
+                
+                // Poll again after a short delay
+                setTimeout(pollNewMessages, 3000);
+            })
+            .catch(error => {
+                console.error('Error fetching messages:', error);
+                setTimeout(pollNewMessages, 10000);
+            });
+    }
+}
 </script>
 
 </body>

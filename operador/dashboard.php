@@ -242,11 +242,28 @@ function generateRandomPhoneNumber() {
 }
 
 function generateRandomCoords() {
+    // Hardcoded center (Mexico City)
+    const centerLat = 19.4;
+    const centerLng = -99.1;
+    const radiusKm = 10; // 10 km radius
+
+    // Convert radius from km to degrees (approximate)
+    const radiusDeg = radiusKm / 111.32;
+
+    // Generate random distance (0 to radius) and angle (0 to 2π)
+    const distance = Math.sqrt(Math.random()) * radiusDeg; // sqrt for uniform distribution
+    const angle = Math.random() * Math.PI * 2;
+
+    // Calculate new coordinates
+    const lat = centerLat + distance * Math.cos(angle);
+    const lng = centerLng + (distance * Math.sin(angle)) / Math.cos(centerLat * Math.PI / 180);
+
     return {
-        lat: parseFloat((19.4 + Math.random() * 0.1).toFixed(6)), // Mexico City area
-        lng: parseFloat((-99.1 + Math.random() * 0.1).toFixed(6))
+        lat: parseFloat(lat.toFixed(6)),
+        lng: parseFloat(lng.toFixed(6))
     };
 }
+
 
 function getRandomPriority() {
     return config.callPriorities[Math.floor(Math.random() * config.callPriorities.length)];

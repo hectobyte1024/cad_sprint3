@@ -1,6 +1,10 @@
 <?php
 session_start();
 
+ini_set('display_errors', 1);
+ini_set('display_startup_errors', 1);
+error_reporting(E_ALL);
+
 // CSRF Protection
 if (empty($_SESSION['csrf_token'])) {
     $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
@@ -11,7 +15,7 @@ if (empty($_SESSION['id_usuario'])) {
     exit();
 }
 
-require_once '../db.php';
+require_once '../db.php'; // This should return a PDO connection
 
 $mensaje_exito = '';
 $mensaje_error = '';
@@ -19,17 +23,38 @@ $call_id = isset($_GET['call_id']) ? intval($_GET['call_id']) : null;
 $incidente = null;
 
 // Load call data if call_id is provided
+// Load call data if call_id is provided
 if ($call_id) {
-    $stmt = $conn->prepare("SELECT i.*, l.id_llamada 
-                          FROM llamadas l
-                          JOIN incidentes i ON l.id_incidente = i.folio_incidente
-                          WHERE l.id_llamada = ?");
-    $stmt->bind_param("i", $call_id);
-    $stmt->execute();
-    $result = $stmt->get_result();
-    
-    if ($result->num_rows > 0) {
-        $incidente = $result->fetch_assoc();
+    try {
+        // Get basic call information
+        $stmt = $pdo->prepare("SELECT * FROM llamadas WHERE id_llamada = ?");
+        $stmt->execute([$call_id]);
+        $llamada = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if (!$llamada) {
+            $mensaje_error = "No existe una llamada con ID $call_id";
+        } else {
+            // Create basic incident structure with default values
+            $incidente = [
+                'id_llamada' => $llamada['id_llamada'],
+                'telefono' => $llamada['telefono'] ?? 'N/A',
+                'quepaso' => $llamada['descripcion'] ?? 'Llamada de broma',
+                'colonia' => null,
+                'localidad' => null,
+                'municipio' => null
+            ];
+            
+            // Try to get additional info if available
+            $stmt = $pdo->prepare("SELECT colonia, localidad, municipio 
+                                 FROM incidentes 
+                                 WHERE id_llamada = ?");
+            $stmt->execute([$call_id]);
+            if ($extra_data = $stmt->fetch(PDO::FETCH_ASSOC)) {
+                $incidente = array_merge($incidente, $extra_data);
+            }
+        }
+    } catch (PDOException $e) {
+        $mensaje_error = "Error al cargar los datos: " . $e->getMessage();
     }
 }
 
@@ -41,41 +66,48 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     }
 
     try {
-        $conn->begin_transaction();
+        $pdo->beginTransaction();
         
+        // Obtener datos del formulario
         $motivo = trim($_POST['motivo'] ?? '');
         $tipo_broma = trim($_POST['tipo_broma'] ?? '');
         $clasificacion = trim($_POST['clasificacion'] ?? 'Inocente');
         $acciones_tomadas = trim($_POST['acciones_tomadas'] ?? '');
         $bloqueo_numero = isset($_POST['bloqueo_numero']) ? 1 : 0;
         $telefono_origen = trim($_POST['telefono_origen'] ?? '');
+        $id_operador = $_SESSION['id_usuario']; // ID del operador actual
+
+        // Insertar en prank_calls
+        $stmt = $pdo->prepare("INSERT INTO prank_calls 
+            (id_llamada, motivo, tipo_broma, clasificacion, acciones_tomadas, 
+            bloqueo_numero, telefono_origen, hora_prank_call, fecha_prank_call, id_operador) 
+            VALUES (:call_id, :motivo, :tipo_broma, :clasificacion, 
+                    :acciones_tomadas, :bloqueo_numero, :telefono_origen, 
+                    NOW(), NOW(), :id_operador)");
         
-        // Insert into prank_calls table
-        $stmt = $conn->prepare("INSERT INTO prank_calls 
-    (id_llamada, motivo, tipo_broma, clasificacion, acciones_tomadas, bloqueo_numero, telefono_origen, hora_prank_call) 
-    VALUES (?, ?, ?, ?, ?, ?, ?, NOW())");
+        $stmt->execute([
+            ':call_id' => $call_id,
+            ':motivo' => $motivo,
+            ':tipo_broma' => $tipo_broma,
+            ':clasificacion' => $clasificacion,
+            ':acciones_tomadas' => $acciones_tomadas,
+            ':bloqueo_numero' => $bloqueo_numero,
+            ':telefono_origen' => $telefono_origen,
+            ':id_operador' => $id_operador
+        ]);
         
-        $stmt->bind_param("issssis", 
-            $call_id, $motivo, $tipo_broma, $clasificacion, 
-            $acciones_tomadas, $bloqueo_numero, $telefono_origen
-        );
+        // Actualizar estado de la llamada
+        $update_stmt = $pdo->prepare("UPDATE llamadas SET estatus = 'Finalizada' WHERE id_llamada = :call_id");
+        $update_stmt->execute([':call_id' => $call_id]);
         
-        $stmt->execute();
-        
-        // Update call status to completed
-        $update_stmt = $conn->prepare("UPDATE llamadas SET estatus = 'Finalizada' WHERE id_llamada = ?");
-        $update_stmt->bind_param("i", $call_id);
-        $update_stmt->execute();
-        
-        $conn->commit();
-        $mensaje_exito = "Llamada de broma registrada correctamente";
-        
-        // Redirect after successful submission
+        $pdo->commit();
+        $_SESSION['mensaje_exito'] = "Llamada de broma registrada correctamente";
         header("Location: calls.php?success=1");
         exit();
-    } catch (Exception $e) {
-        $conn->rollback();
-        $mensaje_error = $e->getMessage();
+        
+    } catch (PDOException $e) {
+        $pdo->rollBack();
+        $mensaje_error = "Error al registrar la llamada: " . $e->getMessage();
     }
 }
 ?>
@@ -249,10 +281,34 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 
         <?php if ($incidente): ?>
             <div class="call-info">
-                <p><strong>ID Llamada:</strong> <?= htmlspecialchars($incidente['id_llamada']) ?></p>
-                <p><strong>Incidente:</strong> <?= htmlspecialchars($incidente['quepaso']) ?></p>
-                <p><strong>Teléfono:</strong> <?= htmlspecialchars($incidente['telefono']) ?></p>
-                <p><strong>Ubicación:</strong> <?= htmlspecialchars($incidente['colonia'] . ', ' . $incidente['localidad']) ?></p>
+                <p><strong>ID Llamada:</strong> <?= htmlspecialchars($incidente['id_llamada'] ?? 'N/A') ?></p>
+                <p><strong>Descripción:</strong> <?= htmlspecialchars($incidente['quepaso'] ?? 'Llamada de broma') ?></p>
+                <p><strong>Teléfono:</strong> <?= htmlspecialchars($incidente['telefono'] ?? 'N/A') ?></p>
+                
+                <?php
+                // Build location information safely
+                $ubicacion_parts = [];
+                
+                // Add text location components if they exist
+                if (!empty($incidente['colonia'])) $ubicacion_parts[] = $incidente['colonia'];
+                if (!empty($incidente['localidad'])) $ubicacion_parts[] = $incidente['localidad'];
+                if (!empty($incidente['municipio'])) $ubicacion_parts[] = $incidente['municipio'];
+                
+                // Add coordinates if they exist
+                $coordenadas = '';
+                if (isset($incidente['latitud']) && isset($incidente['longitud'])) {
+                    $coordenadas = sprintf(" (%.6f, %.6f)", 
+                                        $incidente['latitud'], 
+                                        $incidente['longitud']);
+                }
+                
+                // Only show location if we have any data
+                if (!empty($ubicacion_parts) || !empty($coordenadas)): ?>
+                    <p><strong>Ubicación:</strong> 
+                        <?= htmlspecialchars(implode(', ', $ubicacion_parts)) ?>
+                        <?= htmlspecialchars($coordenadas) ?>
+                    </p>
+                <?php endif; ?>
             </div>
         <?php endif; ?>
 
