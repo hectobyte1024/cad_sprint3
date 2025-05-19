@@ -1,47 +1,45 @@
 <?php
 session_start();
-require_once 'db.php';
+require_once 'db.php'; // $pdo viene de aquí
+
+ini_set('display_errors', 1);
+ini_set('display_startup_errors', 1);
+error_reporting(E_ALL);
 
 if ($_SERVER["REQUEST_METHOD"] == "POST") {
     $correo = $_POST['email'];
     $password = $_POST['password'];
 
     $sql = "SELECT * FROM usuarios WHERE correo = ?";
-    $stmt = $conn->prepare($sql);
-    $stmt->bind_param("s", $correo);
-    $stmt->execute();
-    $result = $stmt->get_result();
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute([$correo]);
+    $usuario = $stmt->fetch();
 
-    if ($result->num_rows > 0) {
-        $usuario = $result->fetch_assoc();
-
+    if ($usuario) {
         // Depuración: Verificar contraseña y hash
-        echo "Contraseña ingresada: " . $password . "<br>";
-        echo "Hash almacenado: " . $usuario['password'] . "<br>";
+        echo "Contraseña ingresada: " . htmlspecialchars($password) . "<br>";
+        echo "Hash almacenado: " . htmlspecialchars($usuario['password']) . "<br>";
         echo "Resultado de password_verify: " . (password_verify($password, $usuario['password']) ? 'true' : 'false') . "<br>";
 
         if (password_verify($password, $usuario['password'])) {
-            
             $_SESSION['id_usuario'] = $usuario['id_usuario'];
-            $_SESSION['nombre_usuario'] = $usuario['nombre']; // Almacena el nombre del usuario
+            $_SESSION['nombre_usuario'] = $usuario['nombre'];
             $rol_id = $usuario['rol_id'];
 
-            $stmtRol = $conn->prepare("SELECT nombre_rol FROM roles WHERE id_rol = ?");
-            $stmtRol->bind_param("i", $rol_id);
-            $stmtRol->execute();
-            $resultRol = $stmtRol->get_result();
+            $stmtRol = $pdo->prepare("SELECT nombre_rol FROM roles WHERE id_rol = ?");
+            $stmtRol->execute([$rol_id]);
+            $rol = $stmtRol->fetch();
 
-            if ($resultRol->num_rows > 0) {
-                $rol = $resultRol->fetch_assoc();
+            if ($rol) {
                 $_SESSION['rol'] = $rol['nombre_rol'];
 
                 $base_url = '/';
                 switch ($rol['nombre_rol']) {
                     case 'Operador':
-                        header("Location: " .$base_url . "operador/incidente.php");
+                        header("Location: " . $base_url . "operador/incidente.php");
                         break;
                     case 'Despachador':
-                        header("Location: " . $base_url . "despachador/despachador.html");
+                        header("Location: " . $base_url . "despachador/menu.php");
                         break;
                     case 'Supervisor_Op':
                         header("Location: " . $base_url . "supervisorOp/supOp.php");
@@ -50,14 +48,12 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                         header("Location: " . $base_url . "gestion/gestion.html");
                         break;
                     default:
-                        // Redirección por defecto para roles no especificados
                         header("Location: " . $base_url . "consulta.php");
                         break;
                 }
                 exit();
-            
             } else {
-                echo "Error al obtener el rol del usuario. Rol ID: " . $rol_id;
+                echo "Error al obtener el rol del usuario. Rol ID: " . htmlspecialchars($rol_id);
             }
         } else {
             echo "Contraseña incorrecta.";
@@ -67,6 +63,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     }
 }
 ?>
+
 
 <!DOCTYPE html>
 <html lang="es">
