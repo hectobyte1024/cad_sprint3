@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>CDMX Emergency Services</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        #map { height: 700px; }
+        .legend { padding: 10px; background: white; border-radius: 5px; }
+        .legend i { width: 18px; height: 18px; float: left; margin-right: 8px; }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        const map = L.map('map').setView([19.4326, -99.1332], 12);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+        // Color coding
+        const getColor = (name) => {
+            if (name.includes('Policía')) return 'blue';
+            if (name.includes('Hospital')) return 'red';
+            if (name.includes('Civil')) return 'green';
+            return 'orange';
+        };
+
+        // Custom icons
+        const createIcon = (color) => L.divIcon({
+            className: 'custom-icon',
+            html: `<div style="background:${color}; width:30px; height:30px; border-radius:50%; 
+                   display:flex; align-items:center; justify-content:center; color:white;">
+                  ${color === 'blue' ? 'Policias' : color === 'red' ? 'Hospital' : 'Proteccion Civil'}</div>`,
+            iconSize: [30, 30]
+        });
+
+        // Fetch data
+        fetch('get_locations.php')
+            .then(res => res.json())
+            .then(data => {
+                data.forEach(loc => {
+                    L.marker([loc.latitud, loc.longitud], {
+                        icon: createIcon(loc.color)
+                    })
+                    .bindPopup(`<b>${loc.nombre}</b><br>${loc.direccion}`)
+                    .addTo(map);
+                });
+
+                // Add legend
+                const legend = L.control({ position: 'bottomright' });
+                legend.onAdd = () => {
+                    const div = L.DomUtil.create('div', 'legend');
+                    div.innerHTML = `
+                        <h4>Leyenda</h4>
+                        <i style="background:blue"></i> Policia<br>
+                        <i style="background:red"></i> Hospitales<br>
+                        <i style="background:green"></i> Proteccion Civil
+                    `;
+                    return div;
+                };
+                legend.addTo(map);
+            });
+    </script>
+</body>
+</html>
