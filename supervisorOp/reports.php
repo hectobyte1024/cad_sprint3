@@ -1,6 +1,6 @@
 <?php
 session_start();
-require_once 'db.php'; // Include your database connection file
+require_once '../db.php'; // Include your database connection file
 
 // Verify user is logged in
 if (!isset($_SESSION['id_usuario'])) {
@@ -8,13 +8,14 @@ if (!isset($_SESSION['id_usuario'])) {
     exit();
 }
 
-// Function to fetch data safely
-function fetchData($conn, $query) {
-    $result = $conn->query($query);
-    if (!$result) {
-        die("Query failed: " . $conn->error);
+// Function to fetch data safely with PDO
+function fetchData($pdo, $query) {
+    try {
+        $stmt = $pdo->query($query);
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    } catch (PDOException $e) {
+        die("Query failed: " . $e->getMessage());
     }
-    return $result->fetch_all(MYSQLI_ASSOC);
 }
 ?>
 
@@ -54,7 +55,7 @@ function fetchData($conn, $query) {
             <div class="table-header d-flex justify-content-between align-items-center">
                 <h2>Llamadas Falsas (Prank Calls)</h2>
                 <span class="badge bg-danger"><?php 
-                    $count = $conn->query("SELECT COUNT(*) FROM prank_calls")->fetch_row()[0];
+                    $count = $pdo->query("SELECT COUNT(*) FROM prank_calls")->fetchColumn();
                     echo $count;
                 ?></span>
             </div>
@@ -73,7 +74,7 @@ function fetchData($conn, $query) {
                     </thead>
                     <tbody>
                         <?php
-                        $prankCalls = fetchData($conn, "
+                        $prankCalls = fetchData($pdo, "
                             SELECT pc.*, l.id_operador, u.nombre as operador_nombre 
                             FROM prank_calls pc
                             LEFT JOIN llamadas l ON pc.id_llamada = l.id_llamada
@@ -112,7 +113,7 @@ function fetchData($conn, $query) {
             <div class="table-header d-flex justify-content-between align-items-center">
                 <h2>Incidentes Reportados</h2>
                 <span class="badge bg-primary"><?php 
-                    $count = $conn->query("SELECT COUNT(*) FROM incidentes")->fetch_row()[0];
+                    $count = $pdo->query("SELECT COUNT(*) FROM incidentes")->fetchColumn();
                     echo $count;
                 ?></span>
             </div>
@@ -132,7 +133,7 @@ function fetchData($conn, $query) {
                     </thead>
                     <tbody>
                         <?php
-                        $incidents = fetchData($conn, "
+                        $incidents = fetchData($pdo, "
                             SELECT i.*, u.nombre as reportador_nombre, 
                                    et.name as tipo_emergencia, et.priority as prioridad_defecto
                             FROM incidentes i

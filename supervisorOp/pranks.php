@@ -3,6 +3,7 @@ session_start();
 require_once '../db.php';
 
 $prank_calls = [];
+$error = null;
 
 try {
     $sql = "SELECT pc.folio_prank_call, pc.motivo, pc.tipo_broma, 
@@ -19,15 +20,15 @@ try {
             JOIN usuarios u ON l.id_operador = u.id_usuario
             ORDER BY pc.fecha_prank_call DESC";
     
-    $stmt = $conn->prepare($sql);
+    $stmt = $pdo->prepare($sql);
     $stmt->execute();
-    $prank_calls = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    $prank_calls = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-} catch (Exception $e) {
+} catch (PDOException $e) {
     $error = "Error al obtener datos: " . $e->getMessage();
 }
 
-$conn->close();
+// No need to close connection explicitly in PDO
 ?>
 
 <!DOCTYPE html>

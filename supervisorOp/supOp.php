@@ -5,8 +5,10 @@ require_once '../db.php';
 
 $llamadas = [];
 $incidentes = [];
+$error = null;
 
 try {
+    // Query for recent calls
     $sql_llamadas = "SELECT l.id_llamada, l.estatus, 
                     CASE 
                         WHEN l.estatus = 'En curso' THEN 'status-encurso'
@@ -17,10 +19,11 @@ try {
                     JOIN usuarios u ON l.id_operador = u.id_usuario
                     ORDER BY l.fecha DESC LIMIT 10";
     
-    $stmt_llamadas = $conn->prepare($sql_llamadas);
+    $stmt_llamadas = $pdo->prepare($sql_llamadas);
     $stmt_llamadas->execute();
-    $llamadas = $stmt_llamadas->get_result()->fetch_all(MYSQLI_ASSOC);
+    $llamadas = $stmt_llamadas->fetchAll(PDO::FETCH_ASSOC);
 
+    // Query for recent incidents
     $sql_incidentes = "SELECT i.folio_incidente, i.hora_incidente, i.prioridad, 
                        CONCAT(u.nombre, ' ', u.apellido) as nombre_usuario,
                        CASE 
@@ -32,15 +35,15 @@ try {
                        JOIN usuarios u ON i.id_usuario_reporta = u.id_usuario
                        ORDER BY i.fecha_incidente DESC LIMIT 10";
     
-    $stmt_incidentes = $conn->prepare($sql_incidentes);
+    $stmt_incidentes = $pdo->prepare($sql_incidentes);
     $stmt_incidentes->execute();
-    $incidentes = $stmt_incidentes->get_result()->fetch_all(MYSQLI_ASSOC);
+    $incidentes = $stmt_incidentes->fetchAll(PDO::FETCH_ASSOC);
 
-} catch (Exception $e) {
+} catch (PDOException $e) {
     $error = "Error al obtener datos: " . $e->getMessage();
 }
 
-$conn->close();
+// No need to explicitly close connection with PDO
 ?>
 
 <!DOCTYPE html>
@@ -170,9 +173,40 @@ $conn->close();
         .action-btn:hover {
             background-color: #82c8d8;
         }
+
+        .navbar {
+            background: var(--primary);
+            padding: 1rem 2rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            box-shadow: var(--box-shadow);
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+            color: white;
+        }
+
+        .navbar a {
+            color: white;
+            text-decoration: none;
+            margin: 0 10px;
+        }
     </style>
 </head>
 <body>
+
+    <nav class="navbar">
+    <div class="navbar-links">
+        <a href="calificar.php" class="nav-link"><i class="fas fa-phone"></i>Calificar</a>
+        <a href="detalle_incidente.php" class="nav-link"><i class="fas fa-list"></i>Detalles de Incidentes</a>
+        <a href="pranks.php" class="nav-link"><i class="fas fa-comments"></i>Llamadas de broma</a>
+        <a href="reports.php" class="nav-link"><i class="fas fa-chart-line"></i>Reporte de llamadas</a>
+        <a href="chat.php" class="nav-link"><i class="fas fa-chart-line"></i>Chat</a>
+        <a href="../logout.php" class="nav-link"><i class="fas fa-sign-out-alt"></i>Salir</a>
+    </div>
+</nav>
+
     <div class="blue-bar">
         <img src="../logo.png" alt="Logo" class="logo">
         Panel de Supervisión 
@@ -184,6 +218,10 @@ $conn->close();
             <button type="submit">Buscar</button>
         </form>
     </div>
+    
+    <?php if ($error): ?>
+        <div style="color: red; text-align: center; padding: 10px;"><?php echo htmlspecialchars($error); ?></div>
+    <?php endif; ?>
     
     <div class="dashboard-container">
         <div class="panel">
@@ -203,9 +241,13 @@ $conn->close();
                             <span class="status-circle <?php echo htmlspecialchars($llamada['clase_estatus']); ?>"></span>
                             <?php echo htmlspecialchars($llamada['estatus']); ?>
                         </td>
-                       
                     </tr>
                     <?php endforeach; ?>
+                    <?php if (empty($llamadas)): ?>
+                    <tr>
+                        <td colspan="2" style="text-align: center;">No hay llamadas recientes</td>
+                    </tr>
+                    <?php endif; ?>
                 </tbody>
             </table>
         </div>
@@ -247,6 +289,11 @@ $conn->close();
                         </td>
                     </tr>
                     <?php endforeach; ?>
+                    <?php if (empty($incidentes)): ?>
+                    <tr>
+                        <td colspan="6" style="text-align: center;">No hay incidentes recientes</td>
+                    </tr>
+                    <?php endif; ?>
                 </tbody>
             </table>
         </div>
