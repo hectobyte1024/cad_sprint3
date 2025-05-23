@@ -30,6 +30,19 @@ $edicion = false;
 $stmt = $pdo->query("SELECT * FROM EmergencyTypes ORDER BY category, name");
 $emergencyTypes = $stmt->fetchAll();
 
+// Handle incident editing if coming with incident ID
+if (isset($_GET['incident_id'])) {
+    $incident_id = intval($_GET['incident_id']);
+    
+    $stmt = $pdo->prepare("SELECT * FROM incidentes WHERE folio_incidente = ?");
+    $stmt->execute([$incident_id]);
+    $incidente = $stmt->fetch();
+    
+    if ($incidente) {
+        $edicion = true;
+    }
+}
+
 // Handle call data if coming from calls.php
 if (isset($_GET['call_id'])) {
     $call_id = intval($_GET['call_id']);
@@ -47,7 +60,7 @@ if (isset($_GET['call_id'])) {
         if ($incidente) {
             $edicion = true;
         } else {
-            // Create new incident from call data - AUTOFILL ALL FIELDS
+            // Create new incident from call data
             $incidente = [
                 'quepaso' => 'Llamada entrante',
                 'tipo_auxilio' => '',
@@ -60,7 +73,8 @@ if (isset($_GET['call_id'])) {
                 'id_emergency_type' => null,
                 'colonia' => '',
                 'localidad' => '',
-                'municipio' => ''
+                'municipio' => '',
+                'hora' => date('H:i')
             ];
             
             // Reverse geocode to get address details
@@ -104,7 +118,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         $pdo->beginTransaction();
         
         // Validate required fields
-        $required = ['coordenadas', 'paso', 'tipo_auxilio', 'telefono', 'prioridad', 'id_emergency_type'];
+        $required = ['coordenadas', 'paso', 'tipo_auxilio', 'telefono', 'prioridad', 'id_emergency_type', 'hora'];
         foreach ($required as $field) {
             if (empty($_POST[$field])) {
                 throw new Exception("El campo $field es requerido");
@@ -123,22 +137,44 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         $colonia = trim($_POST['colonia'] ?? '');
         $localidad = trim($_POST['localidad'] ?? '');
         $municipio = trim($_POST['municipio'] ?? '');
+        $hora = trim($_POST['hora']);
         $id_usuario_reporta = $_SESSION['id_usuario'];
         $id_emergency_type = $_POST['id_emergency_type'];
         $id_llamada = isset($_POST['call_id']) ? intval($_POST['call_id']) : null;
+        $nombre_completo = trim($_POST['nombre_completo'] ?? '');
+        $tipo_telefono = trim($_POST['tipo_telefono'] ?? '');
+        $referencia_lugar = trim($_POST['referencia_lugar'] ?? '');
+        
+        // Objetos involucrados y detalles
+        $objetos_involucrados = [];
+        if (isset($_POST['vehiculos_check']) && $_POST['vehiculos_check'] == '1') {
+            $objetos_involucrados[] = 'Vehículos';
+            if (!empty($_POST['detalles_vehiculos'])) {
+                $objetos_involucrados[] = 'Detalles vehículos: ' . trim($_POST['detalles_vehiculos']);
+            }
+        }
+        if (isset($_POST['armas_check']) && $_POST['armas_check'] == '1') {
+            $objetos_involucrados[] = 'Armas';
+            if (!empty($_POST['detalles_armas'])) {
+                $objetos_involucrados[] = 'Detalles armas: ' . trim($_POST['detalles_armas']);
+            }
+        }
+        $objetos_involucrados_str = implode('; ', $objetos_involucrados);
 
         if (isset($_POST['folio_incidente'])) {
-            // Update existing incident
+            // Update existing incident - incluyendo hora_edicion
             $stmt = $pdo->prepare("UPDATE incidentes SET 
                 quepaso=?, tipo_auxilio=?, num_personas=?, telefono=?, 
                 prioridad=?, latitud=?, longitud=?, 
-                colonia=?, localidad=?, municipio=?, id_emergency_type=?,
-                fecha_actualizacion=NOW()
+                colonia=?, localidad=?, municipio=?, id_emergency_type=?, hora=?,
+                nombre_completo=?, tipo_telefono=?, referencia_lugar=?, objetos_involucrados=?,
+                hora_edicion=CURTIME(), fecha_actualizacion=NOW()
                 WHERE folio_incidente=?");
             $stmt->execute([
                 $quepaso, $tipo_auxilio, $num_personas, $telefono, 
                 $prioridad, $latitud, $longitud, 
-                $colonia, $localidad, $municipio, $id_emergency_type,
+                $colonia, $localidad, $municipio, $id_emergency_type, $hora,
+                $nombre_completo, $tipo_telefono, $referencia_lugar, $objetos_involucrados_str,
                 $_POST['folio_incidente']
             ]);
             $mensaje_exito = "Incidente actualizado correctamente";
@@ -148,13 +184,15 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                 (quepaso, tipo_auxilio, hora_incidente, fecha_incidente, 
                 num_personas, latitud, longitud, 
                 telefono, id_usuario_reporta, prioridad, 
-                colonia, localidad, municipio, id_emergency_type, id_llamada) 
-                VALUES (?, ?, CURTIME(), NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                colonia, localidad, municipio, id_emergency_type, id_llamada, hora,
+                nombre_completo, tipo_telefono, referencia_lugar, objetos_involucrados) 
+                VALUES (?, ?, ?, NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
 
             $stmt->execute([
-                $quepaso, $tipo_auxilio, $num_personas, $latitud, $longitud,
+                $quepaso, $tipo_auxilio, $hora, $num_personas, $latitud, $longitud,
                 $telefono, $id_usuario_reporta, $prioridad,
-                $colonia, $localidad, $municipio, $id_emergency_type, $id_llamada
+                $colonia, $localidad, $municipio, $id_emergency_type, $id_llamada, $hora,
+                $nombre_completo, $tipo_telefono, $referencia_lugar, $objetos_involucrados_str
             ]);
             $folio_incidente = $pdo->lastInsertId();
             $mensaje_exito = "Incidente registrado correctamente";
@@ -184,6 +222,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     }
 }
 ?>
+
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -341,6 +380,15 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             background-color: var(--primary-dark);
         }
 
+        .btn-success {
+            background-color: var(--success);
+            color: white;
+        }
+
+        .btn-success:hover {
+            background-color: #3ab0d9;
+        }
+
         .btn-warning {
             background-color: var(--warning);
             color: white;
@@ -417,6 +465,39 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             margin-top: 4px;
         }
 
+        .button-group {
+            display: flex;
+            gap: 1rem;
+            margin-top: 1.5rem;
+        }
+
+        /* Estilos para objetos involucrados */
+        .checkbox-group {
+            margin-bottom: 15px;
+        }
+
+        .checkbox-group label {
+            display: block;
+            margin-bottom: 8px;
+            cursor: pointer;
+        }
+
+        .detalles-objeto {
+            margin-top: 10px;
+            margin-bottom: 15px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background-color: #f9f9f9;
+            display: none;
+        }
+
+        .detalles-objeto label {
+            font-weight: bold;
+            margin-bottom: 5px;
+            display: block;
+        }
+
         @media (max-width: 768px) {
             .main-container {
                 flex-direction: column;
@@ -454,7 +535,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             <div class="alert alert-danger"><?= htmlspecialchars($mensaje_error) ?></div>
         <?php endif; ?>
 
-        <h2><?= $edicion ? 'Editar' : 'Nuevo' ?> Incidente</h2>
+        <h2><?= $edicion ? 'Editar Incidente' : 'Registrar Nuevo Incidente' ?></h2>
         <form method="POST" onsubmit="return validarFormulario()">
             <?php if ($edicion): ?>
                 <input type="hidden" name="folio_incidente" value="<?= htmlspecialchars($incidente['folio_incidente']) ?>">
@@ -489,6 +570,11 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             </div>
 
             <div class="form-group">
+                <label for="hora"><i class="fas fa-clock"></i> Hora del incidente *</label>
+                <input type="time" id="hora" name="hora" value="<?= htmlspecialchars($incidente['hora'] ?? date('H:i')) ?>" required>
+            </div>
+           
+            <div class="form-group">
                 <label for="prioridad"><i class="fas fa-exclamation"></i> Prioridad *</label>
                 <select id="prioridad" name="prioridad" required>
                     <option value="Media" <?= !isset($incidente['prioridad']) || $incidente['prioridad'] == 'Media' ? 'selected' : '' ?>>Media</option>
@@ -504,6 +590,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 
             <div class="form-group">
                 <label><i class="fas fa-map-marked-alt"></i> Ubicación *</label>
+                <p class="small-text">Haz clic en el mapa o arrastra el marcador para cambiar la ubicación</p>
                 <input type="text" id="coordenadas_display" class="form-control" readonly 
                        value="<?= isset($incidente['latitud']) ? htmlspecialchars($incidente['latitud'] . ', ' . $incidente['longitud']) : '' ?>">
                 <input type="hidden" id="coordenadas" name="coordenadas" 
@@ -519,19 +606,69 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             <input type="hidden" id="colonia" name="colonia" value="<?= htmlspecialchars($incidente['colonia'] ?? '') ?>">
             <input type="hidden" id="localidad" name="localidad" value="<?= htmlspecialchars($incidente['localidad'] ?? '') ?>">
             <input type="hidden" id="municipio" name="municipio" value="<?= htmlspecialchars($incidente['municipio'] ?? '') ?>">
+
+            <div class="form-group">
+                <label> Nombre completo : </label>
+                <input type="text" id="nombre_completo" name="nombre_completo" value="<?= htmlspecialchars($incidente['nombre_completo'] ?? '') ?>" required>
+            </div>
+
+            <div class="form-group">
+                <label for="tipo_telefono"> Tipo de teléfono </label>
+                <select id="tipo_telefono" name="tipo_telefono">
+                    <option value="">Selecciona...</option>
+                    <option value="Local" <?= isset($incidente['tipo_telefono']) && $incidente['tipo_telefono'] == 'Local' ? 'selected' : '' ?>>Local</option>
+                    <option value="Celular" <?= isset($incidente['tipo_telefono']) && $incidente['tipo_telefono'] == 'Celular' ? 'selected' : '' ?>>Celular</option>
+                    <option value="Público" <?= isset($incidente['tipo_telefono']) && $incidente['tipo_telefono'] == 'Público' ? 'selected' : '' ?>>Público</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="referencia_lugar"> Referencia del lugar </label>
+                <textarea id="referencia_lugar" name="referencia_lugar"><?= htmlspecialchars($incidente['referencia_lugar'] ?? '') ?></textarea>
+            </div>
+
+               <!-- Sección de objetos involucrados simplificada -->
+            <div class="form-group">
+                <label>Objetos involucrados</label>
+                <div class="checkbox-group">
+                    <label>
+                        <input type="checkbox" id="vehiculos_check" name="vehiculos_check" value="1" <?= (isset($incidente['objetos_involucrados']) && strpos($incidente['objetos_involucrados'], 'Vehículos') !== false) ? 'checked' : '' ?>>
+                        Vehículos
+                    </label>
+                    <label>
+                        <input type="checkbox" id="armas_check" name="armas_check" value="1" <?= (isset($incidente['objetos_involucrados']) && strpos($incidente['objetos_involucrados'], 'Armas') !== false) ? 'checked' : '' ?>>
+                        Armas
+                    </label>
+                </div>
+            </div>
+
+            <!-- Campo único de detalles -->
+            <div class="form-group">
+                <label for="detalles">Detalles</label>
+                <textarea id="detalles" name="detalles" class="form-control" rows="3" placeholder="Proporciona detalles relevantes sobre el incidente"><?= htmlspecialchars($incidente['detalles'] ?? '') ?></textarea>
+            </div>
             
-            <?php if (isset($_GET['call_id'])): ?>
-                <div class="form-group">
+            <div class="button-group">
+                <?php if ($edicion): ?>
+                    <button type="submit" class="btn btn-success">
+                        <i class="fas fa-save"></i> Actualizar Incidente
+                    </button>
+                    <a href="incidente.php" class="btn btn-warning">
+                        <i class="fas fa-times"></i> Cancelar
+                    </a>
+                <?php else: ?>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-plus-circle"></i> Registrar Incidente
+                    </button>
+                <?php endif; ?>
+                
+                <?php if (isset($_GET['call_id'])): ?>
                     <a href="prank_call.php?call_id=<?= htmlspecialchars($_GET['call_id']) ?>" 
-                    class="btn btn-warning">
+                       class="btn btn-warning">
                         <i class="fas fa-exclamation-triangle"></i> Marcar como Llamada de Broma
                     </a>
-                </div>
-            <?php endif; ?>
-
-            <button type="submit" class="btn btn-primary">
-                <i class="fas fa-save"></i> <?= $edicion ? 'Actualizar' : 'Registrar' ?>
-            </button>
+                <?php endif; ?>
+            </div>
         </form>
     </div>
     
@@ -566,13 +703,98 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 
     let marker = null;
 
+    // Función para actualizar los campos del formulario con las nuevas coordenadas
+    function updateFormFields(lat, lng) {
+        document.getElementById('coordenadas').value = lat + ',' + lng;
+        document.getElementById('coordenadas_display').value = lat + ', ' + lng;
+        
+        // Limpiar detalles de ubicación mientras se carga la nueva
+        document.getElementById('location-details').style.display = 'none';
+        document.getElementById('colonia').value = '';
+        document.getElementById('localidad').value = '';
+        document.getElementById('municipio').value = '';
+        document.getElementById('colonia-display').textContent = '';
+        document.getElementById('localidad-display').textContent = '';
+        document.getElementById('municipio-display').textContent = '';
+        
+        // Hacer geocoding inverso para obtener la nueva dirección
+        fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&accept-language=es`, {
+            headers: {
+                'User-Agent': 'MyApp/1.0'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data && data.address) {
+                const colonia = data.address.suburb || data.address.neighbourhood || '';
+                const localidad = data.address.city || data.address.town || data.address.village || '';
+                const municipio = data.address.state || '';
+                
+                document.getElementById('colonia').value = colonia;
+                document.getElementById('localidad').value = localidad;
+                document.getElementById('municipio').value = municipio;
+                document.getElementById('colonia-display').textContent = colonia;
+                document.getElementById('localidad-display').textContent = localidad;
+                document.getElementById('municipio-display').textContent = municipio;
+                document.getElementById('location-details').style.display = 'block';
+            }
+        })
+        .catch(error => {
+            console.error("Error en geocoding inverso:", error);
+        });
+    }
+
     <?php if (isset($incidente['latitud']) && isset($incidente['longitud'])): ?>
-        marker = L.marker([<?= $incidente['latitud'] ?>, <?= $incidente['longitud'] ?>]).addTo(map);
+        marker = L.marker([<?= $incidente['latitud'] ?>, <?= $incidente['longitud'] ?>], {
+            draggable: true // Hacer el marcador arrastrable
+        }).addTo(map);
+        
+        marker.on('dragend', function(e) {
+            const newLatLng = e.target.getLatLng();
+            updateFormFields(newLatLng.lat, newLatLng.lng);
+        });
+        
         document.getElementById('location-details').style.display = 'block';
     <?php elseif (isset($llamada['latitud']) && isset($llamada['longitud'])): ?>
-        marker = L.marker([<?= $llamada['latitud'] ?>, <?= $llamada['longitud'] ?>]).addTo(map);
+        marker = L.marker([<?= $llamada['latitud'] ?>, <?= $llamada['longitud'] ?>], {
+            draggable: true // Hacer el marcador arrastrable
+        }).addTo(map);
+        
+        marker.on('dragend', function(e) {
+            const newLatLng = e.target.getLatLng();
+            updateFormFields(newLatLng.lat, newLatLng.lng);
+        });
+        
         document.getElementById('location-details').style.display = 'block';
+    <?php else: ?>
+        // Si no hay ubicación previa, crear un marcador arrastrable en la ubicación inicial
+        marker = L.marker([initialLat, initialLng], {
+            draggable: true
+        }).addTo(map);
+        
+        marker.on('dragend', function(e) {
+            const newLatLng = e.target.getLatLng();
+            updateFormFields(newLatLng.lat, newLatLng.lng);
+        });
     <?php endif; ?>
+
+    // Permitir también hacer clic en el mapa para mover el marcador
+    map.on('click', function(e) {
+        if (!marker) {
+            marker = L.marker(e.latlng, {
+                draggable: true
+            }).addTo(map);
+            
+            marker.on('dragend', function(e) {
+                const newLatLng = e.target.getLatLng();
+                updateFormFields(newLatLng.lat, newLatLng.lng);
+            });
+        } else {
+            marker.setLatLng(e.latlng);
+        }
+        
+        updateFormFields(e.latlng.lat, e.latlng.lng);
+    });
 
     // Emergency types data for autocomplete
     const emergencyTypes = <?php echo json_encode($emergencyTypes); ?>;
@@ -632,8 +854,39 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         }
     <?php endif; ?>
 
+    // Control de visibilidad de detalles de objetos involucrados
+    document.addEventListener('DOMContentLoaded', function() {
+        const vehiculosCheck = document.getElementById('vehiculos_check');
+        const armasCheck = document.getElementById('armas_check');
+        const detallesVehiculos = document.getElementById('detalles-vehiculos');
+        const detallesArmas = document.getElementById('detalles-armas');
+
+        // Mostrar/ocultar detalles según el estado inicial
+        if (vehiculosCheck.checked) {
+            detallesVehiculos.style.display = 'block';
+        }
+        if (armasCheck.checked) {
+            detallesArmas.style.display = 'block';
+        }
+
+        // Event listeners para cambios en los checkboxes
+        vehiculosCheck.addEventListener('change', function() {
+            detallesVehiculos.style.display = this.checked ? 'block' : 'none';
+            if (!this.checked) {
+                document.getElementById('detalles_vehiculos').value = '';
+            }
+        });
+
+        armasCheck.addEventListener('change', function() {
+            detallesArmas.style.display = this.checked ? 'block' : 'none';
+            if (!this.checked) {
+                document.getElementById('detalles_armas').value = '';
+            }
+        });
+    });
+
     function validarFormulario() {
-        const required = ['coordenadas', 'tipo_auxilio', 'telefono', 'prioridad', 'paso', 'num_personas'];
+        const required = ['coordenadas', 'tipo_auxilio', 'telefono', 'prioridad', 'paso', 'num_personas', 'hora'];
         let valid = true;
         
         required.forEach(field => {
@@ -665,4 +918,3 @@ function getEmergencyTypeName($code, $emergencyTypes) {
     }
     return '';
 }
-?>

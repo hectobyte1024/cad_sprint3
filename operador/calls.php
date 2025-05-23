@@ -224,9 +224,7 @@ $calls = $stmt->fetchAll(PDO::FETCH_ASSOC);
                             <button class="btn btn-complete" onclick="updateCallStatus(<?= $call['id_llamada'] ?>, 'Finalizada')">
                                 Finalizar
                             </button>
-                            <button class="btn btn-classify" onclick="redirectToIncident(<?= $call['id_llamada'] ?>)">
-                                Crear Incidente
-                            </button>
+                           
                         <?php endif; ?>
                     </td>
                 </tr>
