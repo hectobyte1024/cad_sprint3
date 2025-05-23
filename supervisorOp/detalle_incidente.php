@@ -1,9 +1,13 @@
 <?php
 session_start();
 
+if (!isset($_SESSION['id_usuario'])) {
+    header("Location: ../login.php");
+    exit();
+}
 
 if (!isset($_GET['id'])) {
-    header("Location: supervisorOp.php");
+    header("Location: incidents_report.php");
     exit();
 }
 
@@ -11,22 +15,31 @@ $folio_incidente = $_GET['id'];
 
 require_once '../db.php';
 
-$sql = "SELECT i.*, 
-               CONCAT(u.nombre, ' ', u.apellido) as nombre_usuario,
-               GROUP_CONCAT(DISTINCT au.id_unidad) as unidades_asignadas,
-               GROUP_CONCAT(DISTINCT tu.nombre_tipo) as tipos_unidades
-        FROM incidentes i
-        JOIN usuarios u ON i.id_usuario_reporta = u.id_usuario
-        LEFT JOIN asignaciones_unidades au ON i.folio_incidente = au.id_incidente
-        LEFT JOIN unidades un ON au.id_unidad = un.id_unidad
-        LEFT JOIN tipos_unidad tu ON un.id_tipo_unidad = tu.id_tipo
-        WHERE i.folio_incidente = ?";
-$stmt = $conn->prepare($sql);
-$stmt->bind_param("i", $folio_incidente);
-$stmt->execute();
-$incidente = $stmt->get_result()->fetch_assoc();
-
-$conn->close();
+try {
+    $sql = "SELECT i.*, 
+                   CONCAT(u.nombre, ' ', u.apellido) as nombre_usuario,
+                   CONCAT(op.nombre, ' ', op.apellido) as operador_nombre,
+                   et.name as tipo_emergencia,
+                   un.nombre_unidad as unidad_nombre
+            FROM incidentes i
+            JOIN usuarios u ON i.id_usuario_reporta = u.id_usuario
+            LEFT JOIN llamadas l ON i.id_llamada = l.id_llamada
+            LEFT JOIN usuarios op ON l.id_operador = op.id_usuario
+            LEFT JOIN EmergencyTypes et ON i.id_emergency_type = et.code
+            LEFT JOIN unidades un ON i.id_unidad_asignada = un.id_unidad
+            WHERE i.folio_incidente = ?";
+    
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute([$folio_incidente]);
+    $incidente = $stmt->fetch(PDO::FETCH_ASSOC);
+    
+    if (!$incidente) {
+        header("Location: incidents_report.php");
+        exit();
+    }
+} catch (PDOException $e) {
+    die("Error al consultar la base de datos: " . $e->getMessage());
+}
 ?>
 
 <!DOCTYPE html>
@@ -34,7 +47,9 @@ $conn->close();
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Detalle de Incidente</title>
+    <title>Detalle de Incidente #<?= htmlspecialchars($folio_incidente) ?></title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -45,32 +60,20 @@ $conn->close();
         }
         
         .blue-bar {
-            background-color: #93D8E8;
+            background-color: #4361ee;
             color: white;
-            padding: 30px;
+            padding: 20px;
             text-align: center;
             font-size: 24px;
             font-weight: bold;
             box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-            position: relative;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-        }
-        
-        .logo {
-            position: absolute;
-            top: 50%;
-            right: 20px;
-            transform: translateY(-50%);
-            max-height: 60px;
-            width: auto;
+            margin-bottom: 30px;
         }
         
         .container {
-            max-width: 900px;
-            margin: 30px auto;
-            padding: 0 20px;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
         }
         
         .card {
@@ -82,7 +85,7 @@ $conn->close();
         }
         
         .card-header {
-            border-bottom: 2px solid #93D8E8;
+            border-bottom: 2px solid #4361ee;
             padding-bottom: 15px;
             margin-bottom: 20px;
             display: flex;
@@ -105,18 +108,18 @@ $conn->close();
         }
         
         .priority-high {
-            background-color: #ffebee;
-            color: #f44336;
+            background-color: #dc3545;
+            color: white;
         }
         
         .priority-medium {
-            background-color: #fff8e1;
-            color: #ffa000;
+            background-color: #ffc107;
+            color: #000;
         }
         
         .priority-low {
-            background-color: #e8f5e9;
-            color: #4caf50;
+            background-color: #28a745;
+            color: white;
         }
         
         .detail-grid {
@@ -132,7 +135,7 @@ $conn->close();
         
         .detail-label {
             font-weight: bold;
-            color: #7f8c8d;
+            color: #6c757d;
             margin-bottom: 5px;
             font-size: 14px;
         }
@@ -140,30 +143,15 @@ $conn->close();
         .detail-value {
             font-size: 16px;
             padding: 8px 0;
-            border-bottom: 1px solid #ecf0f1;
+            border-bottom: 1px solid #dee2e6;
         }
         
         .description-box {
-            background-color: #f9f9f9;
-            border-left: 4px solid #93D8E8;
+            background-color: #f8f9fa;
+            border-left: 4px solid #4361ee;
             padding: 15px;
             margin: 20px 0;
             border-radius: 0 4px 4px 0;
-        }
-        
-        .units-container {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 10px;
-            margin-top: 10px;
-        }
-        
-        .unit-badge {
-            background-color: #e3f2fd;
-            color: #1976d2;
-            padding: 5px 10px;
-            border-radius: 4px;
-            font-size: 14px;
         }
         
         .btn {
@@ -178,28 +166,21 @@ $conn->close();
         }
         
         .btn-primary {
-            background-color: #93D8E8;
+            background-color: #4361ee;
             color: white;
         }
         
         .btn-primary:hover {
-            background-color: #82c8d8;
+            background-color: #3a56d4;
         }
         
         .btn-secondary {
-            background-color: #f5f5f5;
-            color: #333;
-            border: 1px solid #ddd;
+            background-color: #6c757d;
+            color: white;
         }
         
         .btn-secondary:hover {
-            background-color: #e0e0e0;
-        }
-        
-        .btn-group {
-            display: flex;
-            gap: 10px;
-            margin-top: 20px;
+            background-color: #5a6268;
         }
         
         @media (max-width: 768px) {
@@ -209,93 +190,126 @@ $conn->close();
             
             .blue-bar {
                 font-size: 20px;
-                padding: 20px;
-            }
-            
-            .logo {
-                max-height: 50px;
+                padding: 15px;
             }
         }
     </style>
 </head>
 <body>
     <div class="blue-bar">
-        <img src="../logo.png" alt="Logo" class="logo">
-        Detalles del Incidente #<?php echo htmlspecialchars($folio_incidente); ?>
+        Detalles del Incidente #<?= htmlspecialchars($folio_incidente) ?>
     </div>
 
     <div class="container">
         <div class="card">
             <div class="card-header">
                 <h2 class="card-title">Información General</h2>
-                <span class="priority-badge priority-<?php echo strtolower($incidente['prioridad']); ?>">
-                    <?php echo htmlspecialchars($incidente['prioridad']); ?>
+                <span class="priority-badge priority-<?= strtolower($incidente['prioridad']) ?>">
+                    <?= htmlspecialchars($incidente['prioridad']) ?>
                 </span>
             </div>
             
             <div class="detail-grid">
                 <div class="detail-item">
                     <div class="detail-label">Reportado por</div>
-                    <div class="detail-value"><?php echo htmlspecialchars($incidente['nombre_usuario']); ?></div>
+                    <div class="detail-value"><?= htmlspecialchars($incidente['nombre_usuario']) ?></div>
+                </div>
+                
+                <div class="detail-item">
+                    <div class="detail-label">Operador</div>
+                    <div class="detail-value"><?= htmlspecialchars($incidente['operador_nombre'] ?? 'N/A') ?></div>
                 </div>
                 
                 <div class="detail-item">
                     <div class="detail-label">Fecha y Hora</div>
-                    <div class="detail-value"><?php echo htmlspecialchars($incidente['fecha_incidente']); ?></div>
+                    <div class="detail-value"><?= date('d/m/Y H:i', strtotime($incidente['fecha_incidente'])) ?></div>
                 </div>
                 
                 <div class="detail-item">
                     <div class="detail-label">Tipo de Auxilio</div>
-                    <div class="detail-value"><?php echo htmlspecialchars($incidente['tipo_auxilio']); ?></div>
+                    <div class="detail-value"><?= htmlspecialchars($incidente['tipo_auxilio']) ?></div>
+                </div>
+                
+                <div class="detail-item">
+                    <div class="detail-label">Tipo de Emergencia</div>
+                    <div class="detail-value"><?= htmlspecialchars($incidente['tipo_emergencia'] ?? 'N/A') ?></div>
                 </div>
                 
                 <div class="detail-item">
                     <div class="detail-label">Clasificación</div>
-                    <div class="detail-value"><?php echo htmlspecialchars($incidente['clasificacion']); ?></div>
+                    <div class="detail-value"><?= htmlspecialchars($incidente['clasificacion']) ?></div>
+                </div>
+                
+                <div class="detail-item">
+                    <div class="detail-label">Unidad Asignada</div>
+                    <div class="detail-value"><?= htmlspecialchars($incidente['unidad_nombre'] ?? 'Ninguna') ?></div>
                 </div>
                 
                 <div class="detail-item">
                     <div class="detail-label">Personas Involucradas</div>
-                    <div class="detail-value"><?php echo htmlspecialchars($incidente['num_personas']); ?></div>
+                    <div class="detail-value"><?= htmlspecialchars($incidente['num_personas']) ?></div>
                 </div>
                 
                 <div class="detail-item">
                     <div class="detail-label">Teléfono Reporte</div>
-                    <div class="detail-value"><?php echo htmlspecialchars($incidente['telefono']); ?></div>
+                    <div class="detail-value"><?= htmlspecialchars($incidente['telefono']) ?></div>
+                </div>
+                
+                <div class="detail-item">
+                    <div class="detail-label">Tipo de Teléfono</div>
+                    <div class="detail-value"><?= htmlspecialchars($incidente['tipo_telefono'] ?? 'N/A') ?></div>
                 </div>
             </div>
             
             <div class="detail-item">
                 <div class="detail-label">Ubicación</div>
-                <div class="detail-value"><?php echo htmlspecialchars($incidente['ubicacion']); ?></div>
-            </div>
-            
-            <?php if ($incidente['unidades_asignadas']): ?>
-            <div class="detail-item">
-                <div class="detail-label">Unidades Asignadas</div>
-                <div class="units-container">
-                    <?php 
-                    $unidades = explode(',', $incidente['unidades_asignadas']);
-                    $tipos = explode(',', $incidente['tipos_unidades']);
-                    foreach(array_combine($unidades, $tipos) as $unidad => $tipo): 
-                    ?>
-                    <span class="unit-badge"><?php echo htmlspecialchars($tipo); ?> #<?php echo htmlspecialchars($unidad); ?></span>
-                    <?php endforeach; ?>
+                <div class="detail-value">
+                    <?= htmlspecialchars($incidente['colonia'] . ', ' . $incidente['localidad'] . ', ' . $incidente['municipio']) ?>
+                    <br>
+                    Coordenadas: <?= htmlspecialchars($incidente['latitud'] . ', ' . $incidente['longitud']) ?>
                 </div>
             </div>
-            <?php endif; ?>
             
             <div class="detail-item">
                 <div class="detail-label">Descripción del Incidente</div>
                 <div class="description-box">
-                    <?php echo htmlspecialchars($incidente['quepaso']); ?>
+                    <?= htmlspecialchars($incidente['quepaso']) ?>
                 </div>
             </div>
             
-            <div class="btn-group">
-                <a href="supervisor.php" class="btn btn-secondary">Volver al Panel</a>
+            <div class="detail-item">
+                <div class="detail-label">Referencia del Lugar</div>
+                <div class="description-box">
+                    <?= htmlspecialchars($incidente['referencia_lugar'] ?? 'N/A') ?>
+                </div>
+            </div>
+            
+            <div class="detail-item">
+                <div class="detail-label">Detalles Adicionales</div>
+                <div class="description-box">
+                    <?= htmlspecialchars($incidente['detalle'] ?? 'N/A') ?>
+                </div>
+            </div>
+            
+            <div class="detail-item">
+                <div class="detail-label">Objetos Involucrados</div>
+                <div class="description-box">
+                    <?= htmlspecialchars($incidente['objetos_involucrados'] ?? 'N/A') ?>
+                </div>
+            </div>
+            
+            <div class="d-flex justify-content-between mt-4">
+                <a href="incidents_report.php" class="btn btn-secondary">
+                    <i class="fas fa-arrow-left"></i> Volver al Reporte
+                </a>
+                
+                <a href="edit_incident.php?id=<?= $folio_incidente ?>" class="btn btn-primary">
+                    <i class="fas fa-edit"></i> Editar Incidente
+                </a>
             </div>
         </div>
     </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
