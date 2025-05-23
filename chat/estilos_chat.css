@@ -1,0 +1,154 @@
+body {
+    font-family: Arial, sans-serif;
+    margin: 0;
+    padding: 0;
+    background-color: #f5f5f5;
+}
+
+.chat-container {
+    max-width: 1200px;
+    margin: 20px auto;
+    padding: 20px;
+    background-color: white;
+    border-radius: 8px;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+    display: flex;
+    flex-direction: column;
+}
+
+h1, h2, h3 {
+    color: #333;
+}
+
+.incidentes-list {
+    margin-bottom: 20px;
+    padding: 15px;
+    background-color: #f9f9f9;
+    border-radius: 5px;
+}
+
+.incidentes-list ul {
+    list-style-type: none;
+    padding: 0;
+}
+
+.incidentes-list li {
+    padding: 8px 0;
+    border-bottom: 1px solid #eee;
+}
+
+.incidentes-list li a {
+    text-decoration: none;
+    color: #0066cc;
+}
+
+.incidentes-list li a:hover {
+    text-decoration: underline;
+}
+
+.chat-area {
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+.unidades-list {
+    margin-bottom: 15px;
+    padding: 10px;
+    background-color: #eef7ff;
+    border-radius: 5px;
+}
+
+.unidades-list ul {
+    list-style-type: none;
+    padding: 0;
+    margin: 0;
+}
+
+.unidades-list li {
+    padding: 5px 0;
+}
+
+.mensajes-container {
+    flex-grow: 1;
+    max-height: 400px;
+    overflow-y: auto;
+    padding: 15px;
+    background-color: #f9f9f9;
+    border-radius: 5px;
+    margin-bottom: 15px;
+    border: 1px solid #ddd;
+}
+
+.mensaje {
+    margin-bottom: 15px;
+    padding: 10px;
+    border-radius: 5px;
+    max-width: 70%;
+}
+
+.mensaje-propio {
+    background-color: #dcf8c6;
+    margin-left: auto;
+    border: 1px solid #b3e0a1;
+}
+
+.mensaje-otro {
+    background-color: #e5e5ea;
+    margin-right: auto;
+    border: 1px solid #d1d1d6;
+}
+
+.mensaje-cabecera {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 5px;
+    font-size: 0.9em;
+}
+
+.mensaje-cabecera strong {
+    color: #333;
+}
+
+.hora {
+    color: #666;
+    font-size: 0.8em;
+}
+
+.mensaje-texto {
+    word-wrap: break-word;
+}
+
+.mensaje-form {
+    display: flex;
+    gap: 10px;
+}
+
+.mensaje-form textarea {
+    flex-grow: 1;
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    resize: none;
+    min-height: 60px;
+}
+
+.mensaje-form button {
+    padding: 10px 20px;
+    background-color: #0066cc;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+}
+
+.mensaje-form button:hover {
+    background-color: #0052a3;
+}
+
+.no-seleccionado {
+    text-align: center;
+    padding: 50px;
+    color: #666;
+    font-size: 1.2em;
+}
