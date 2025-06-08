@@ -36,7 +36,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                 $base_url = '/';
                 switch ($rol['nombre_rol']) {
                     case 'Operador':
-                        header("Location: " . $base_url . "operador/incidente.php");
+                        header("Location: " . $base_url . "operador/calls.php");
                         break;
                     case 'Despachador':
                         header("Location: " . $base_url . "despachador/menu.php");
@@ -45,10 +45,10 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                         header("Location: " . $base_url . "supervisorOp/supOp.php");
                         break;
                     case 'Administrador':
-                        header("Location: " . $base_url . "gestion/gestion.html");
+                        header("Location: " . $base_url . "gestion/gestion.php");
                         break;
                     default:
-                        header("Location: " . $base_url . "consulta.php");
+                        header("Location: " . $base_url . "supDes/unidadesmapa.php");
                         break;
                 }
                 exit();

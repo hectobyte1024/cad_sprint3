@@ -8,7 +8,17 @@ if (empty($_SESSION['id_usuario']) || empty($_SESSION['nombre_usuario'])) {
 require_once '../db.php';
 
 // Get all calls ordered by date (newest first)
-$stmt = $pdo->query("SELECT * FROM llamadas ORDER BY fecha DESC");
+// Modify the SQL query to join with incident data
+$stmt = $pdo->query("
+    SELECT l.*, 
+           GROUP_CONCAT(i.folio_incidente) AS incidentes_relacionados,
+           COUNT(il.id_relacion) AS num_incidentes
+    FROM llamadas l
+    LEFT JOIN incidente_llamadas il ON l.id_llamada = il.id_llamada
+    LEFT JOIN incidentes i ON il.folio_incidente = i.folio_incidente
+    GROUP BY l.id_llamada
+    ORDER BY l.fecha DESC
+");
 $calls = $stmt->fetchAll(PDO::FETCH_ASSOC);
 ?>
 <!DOCTYPE html>
@@ -216,17 +226,25 @@ $calls = $stmt->fetchAll(PDO::FETCH_ASSOC);
                         <?php endif; ?>
                     </td>
                     <td>
-                        <?php if ($call['estatus'] === 'Atender'): ?>
-                            <button class="btn btn-attend" onclick="redirectToIncident(<?= $call['id_llamada'] ?>)">
-                                Atender
-                            </button>
-                        <?php elseif ($call['estatus'] === 'En curso'): ?>
-                            <button class="btn btn-complete" onclick="updateCallStatus(<?= $call['id_llamada'] ?>, 'Finalizada')">
-                                Finalizar
-                            </button>
-                           
+                        <?php if ($call['num_incidentes'] > 0): ?>
+                            <span class="badge badge-success">
+                                Relacionado a incidente(s): <?= htmlspecialchars($call['incidentes_relacionados']) ?>
+                            </span>
+                        <?php else: ?>
+                            <?php if ($call['estatus'] === 'Atender'): ?>
+                                <button class="btn btn-attend" onclick="redirectToIncident(<?= $call['id_llamada'] ?>)">
+                                    Atender
+                                </button>
+                            <?php elseif ($call['estatus'] === 'En curso'): ?>
+                                <button class="btn btn-complete" onclick="updateCallStatus(<?= $call['id_llamada'] ?>, 'Finalizada')">
+                                    Finalizar
+                                </button>
+                            <?php endif; ?>
                         <?php endif; ?>
                     </td>
+
+
+
                 </tr>
                 <?php endforeach; ?>
             </tbody>
@@ -339,6 +357,56 @@ function redirectToIncident(callId) {
         alert('Error de red: ' + error.message);
     });
 }
+
+// In calls.php
+function showCallClusters() {
+    fetch('get_call_clusters.php')
+        .then(response => response.json())
+        .then(clusters => {
+            // Clear existing map
+            if (map) {
+                map.eachLayer(layer => {
+                    if (layer instanceof L.Marker || layer instanceof L.CircleMarker) {
+                        map.removeLayer(layer);
+                    }
+                });
+            } else {
+                // Initialize map if not already done
+                const firstCluster = clusters[0];
+                map = L.map('map').setView([firstCluster.avg_lat, firstCluster.avg_lng], 12);
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                }).addTo(map);
+            }
+
+            // Add clusters to map
+            clusters.forEach(cluster => {
+                const popupContent = `
+                    <strong>${cluster.emergency_type}</strong><br>
+                    ${cluster.call_count} llamadas<br>
+                    <button onclick="createIncidentFromCluster(${cluster.avg_lat}, ${cluster.avg_lng}, '${cluster.emergency_type}')">
+                        Crear incidente
+                    </button>
+                `;
+
+                L.circleMarker([cluster.avg_lat, cluster.avg_lng], {
+                    radius: Math.min(10 + cluster.call_count * 2, 30),
+                    fillColor: "#ff7800",
+                    color: "#000",
+                    weight: 1,
+                    opacity: 1,
+                    fillOpacity: 0.8
+                }).addTo(map)
+                .bindPopup(popupContent);
+            });
+        });
+}
+
+function createIncidentFromCluster(lat, lng, emergencyType) {
+    // Redirect to incident page with pre-filled data
+    window.location.href = `incidente.php?lat=${lat}&lng=${lng}&emergency_type=${encodeURIComponent(emergencyType)}`;
+}
+
 </script>
 </body>
 </html>

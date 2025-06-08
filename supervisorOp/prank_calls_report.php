@@ -189,9 +189,9 @@ function fetchData($pdo, $query, $params = []) {
                                 <td>{$call['telefono_origen']}</td>
                                 <td><span class='badge badge-prank'>{$call['clasificacion']}</span></td>
                                 <td><a href='detalle_incidente.php?id={$incident['folio_incidente']}' class='btn btn-sm btn-outline-primary'>
-        <i class='fas fa-eye'></i> Detalles
-    </a>
-</td>
+                                        <i class='fas fa-eye'></i> Detalles
+                                    </a>
+                                </td>
                             </tr>";
                         }
                         

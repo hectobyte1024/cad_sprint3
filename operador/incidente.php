@@ -521,6 +521,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         <a href="incidente.php" class="nav-link"><i class="fas fa-list"></i> Incidentes</a>
         <a href="chat.php" class="nav-link"><i class="fas fa-comments"></i> Chat</a>
         <a href="dashboard.php" class="nav-link"><i class="fas fa-chart-line"></i> Dashboard</a>
+        <a href="cluster_view.php" class="nav-link">Clusters</a>
         <a href="../logout.php" class="nav-link"><i class="fas fa-sign-out-alt"></i> Salir</a>
     </div>
 </nav>
@@ -917,4 +918,35 @@ function getEmergencyTypeName($code, $emergencyTypes) {
         }
     }
     return '';
+}
+
+
+
+function findRelatedCalls($pdo, $lat, $lng, $emergencyType, $maxDistanceMeters = 500, $timeWindowMinutes = 30) {
+    // Calculate time window
+    $timeWindowStart = date('Y-m-d H:i:s', strtotime("-$timeWindowMinutes minutes"));
+    
+    // Prepare query to find calls with same emergency type within distance and time
+    $query = "
+        SELECT l.id_llamada, l.latitud, l.longitud, l.fecha
+        FROM llamadas l
+        WHERE l.id_emergency_type = :emergencyType
+        AND l.fecha >= :timeWindowStart
+        AND l.estatus IN ('Atender', 'Clasificada')
+        AND ST_Distance_Sphere(
+            POINT(:lng, :lat),
+            POINT(l.longitud, l.latitud)
+        ) <= :maxDistance
+    ";
+    
+    $stmt = $pdo->prepare($query);
+    $stmt->execute([
+        ':emergencyType' => $emergencyType,
+        ':timeWindowStart' => $timeWindowStart,
+        ':lat' => $lat,
+        ':lng' => $lng,
+        ':maxDistance' => $maxDistanceMeters
+    ]);
+    
+    return $stmt->fetchAll(PDO::FETCH_ASSOC);
 }
